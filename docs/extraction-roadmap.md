@@ -79,13 +79,19 @@ delivery:
 
 P0 should be deliberately boring:
 
-- Load synthetic exercise fixtures.
-- Open one manual exercise.
-- Submit wrong answers until the attempt limit is exhausted.
-- Submit a correct answer for another exercise.
-- Queue a second exercise while one is pending.
-- Render a daily parent report from synthetic sessions/answers.
-- Run without production `HERMES_HOME`.
+- [x] Load synthetic exercise fixtures.
+- [x] Open one manual exercise.
+- [x] Submit wrong answers until the attempt limit is exhausted.
+- [x] Submit a correct answer for another exercise.
+- [x] Queue a second exercise while one is pending.
+- [x] Render a daily parent report from synthetic sessions/answers.
+- [x] Run without production `HERMES_HOME`.
+
+Implemented in the first public runtime slice:
+
+- `learnbuddy_core.runtime.LearnBuddyRuntime`
+- plugin wrapper tools in `plugins/learnbuddy-learning/__init__.py`
+- synthetic tests in `tests/test_runtime.py` and `tests/test_plugin_wrapper.py`
 
 If this cannot run against synthetic data, it is not ready to touch real family workflows. Tiny hammer, big nail.
 

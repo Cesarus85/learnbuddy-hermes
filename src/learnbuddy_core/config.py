@@ -26,4 +26,8 @@ def load_yaml_config(path: str | Path) -> dict[str, Any]:
 
 
 def default_storage_dir() -> Path:
-    return Path(os.getenv("LEARNBUDDY_STORAGE_DIR", "~/.hermes/family/learnbuddy")).expanduser()
+    explicit = os.getenv("LEARNBUDDY_STORAGE_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+    hermes_home = Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser()
+    return hermes_home / "family" / "learnbuddy"
