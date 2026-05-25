@@ -39,6 +39,8 @@ Supported design targets:
 - `0.4`: multiple children and parent devices
 - `0.5`: iOS companion app
 
+See [`docs/extraction-roadmap.md`](docs/extraction-roadmap.md) for the public-safe extraction plan from private reference behavior into generic LearnBuddy modules.
+
 ## Safety baseline
 
 The child-facing Hermes profile must not have dangerous generic tools enabled. Default forbidden toolsets:
