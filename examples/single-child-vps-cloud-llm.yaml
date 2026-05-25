@@ -1,0 +1,17 @@
+deployment:
+  mode: vps
+  host_hint: ubuntu-24.04
+
+family:
+  language: de
+  timezone: Europe/Berlin
+
+llm:
+  mode: cloud
+  provider: openrouter
+  api_key_env: OPENROUTER_API_KEY
+
+security:
+  require_firewall: true
+  require_https: true
+  no_telemetry: true

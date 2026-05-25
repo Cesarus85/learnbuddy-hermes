@@ -1,0 +1,12 @@
+# Merge into the child Hermes profile config. Example only.
+platform_toolsets:
+  telegram:
+    - learnbuddy_learning
+    - tts
+    - vision
+# Forbidden for child profile by default:
+# - terminal
+# - file
+# - code_execution
+# - homeassistant
+# - messaging

@@ -1,0 +1,17 @@
+family:
+  language: {{ language | default("de") }}
+  timezone: {{ timezone | default("Europe/Berlin") }}
+
+children:
+  - id: {{ child_id }}
+    name: {{ child_name }}
+    agent_name: {{ child_agent_name }}
+    grade: {{ grade }}
+    subjects: [math, german, english]
+    max_attempts: 3
+    allowed_hours:
+      from: "07:00"
+      to: "21:00"
+
+delivery:
+  mode: telegram

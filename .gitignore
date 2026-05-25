@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.json
+
+# LearnBuddy local data
+.family/
+learnbuddy.db
+*.sqlite
+*.sqlite3
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
