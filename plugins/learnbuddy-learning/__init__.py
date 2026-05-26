@@ -11,6 +11,7 @@ from typing import Any
 
 from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
+from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
@@ -43,8 +44,8 @@ def _json(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, sort_keys=True)
 
 
-def _delivery_adapter(config: LearnBuddyConfig):
-    return delivery_adapter_from_config(config)
+def _delivery_adapter(config: LearnBuddyConfig, *, recipient: str = "child"):
+    return delivery_adapter_from_config(config, recipient=recipient)
 
 
 def learnbuddy_queue_exercise(args: dict[str, Any] | None = None) -> str:
@@ -101,8 +102,13 @@ def learnbuddy_learning_status(args: dict[str, Any] | None = None) -> str:
 
 def learnbuddy_parent_report(args: dict[str, Any] | None = None) -> str:
     """Render a simple parent-facing report from local synthetic data."""
-    runtime = _runtime(dict(args or {}))
-    return _json(runtime.parent_report())
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    report = runtime.parent_report()
+    if args.get("notify"):
+        report["notification"] = ParentNotifier(_delivery_adapter(config, recipient="parent")).notify_report(report).to_dict()
+    return _json(report)
 
 
 TOOLS = [

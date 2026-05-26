@@ -20,6 +20,8 @@ class LearnBuddyConfig:
     delivery_mode: str = "dry_run"
     child_telegram_bot_token_env: str = "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN"
     child_telegram_chat_id_env: str = "LEARNBUDDY_ALLOWED_CHILD_CHAT_ID"
+    parent_telegram_bot_token_env: str = "LEARNBUDDY_PARENT_TELEGRAM_BOT_TOKEN"
+    parent_telegram_chat_id_env: str = "LEARNBUDDY_ALLOWED_PARENT_CHAT_ID"
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "LearnBuddyConfig":
@@ -41,6 +43,10 @@ class LearnBuddyConfig:
         telegram = _mapping(delivery.get("telegram"))
         child_delivery = _mapping(delivery.get("child"))
         child_delivery_type = child_delivery.get("type")
+        parent_delivery = _mapping(delivery.get("parent"))
+        parents = delivery.get("parents")
+        if not parent_delivery and isinstance(parents, list) and parents:
+            parent_delivery = _mapping(parents[0])
 
         storage_dir = data.get("storage_dir") or storage.get("data_dir")
         if storage_dir is not None:
@@ -71,6 +77,18 @@ class LearnBuddyConfig:
                 or child_delivery.get("allowed_chat_ids_env")
                 or child_delivery.get("chat_id_env")
                 or cls.child_telegram_chat_id_env
+            ),
+            parent_telegram_bot_token_env=str(
+                telegram.get("parent_bot_env")
+                or parent_delivery.get("bot_token_env")
+                or cls.parent_telegram_bot_token_env
+            ),
+            parent_telegram_chat_id_env=str(
+                telegram.get("parent_chat_id_env")
+                or parent_delivery.get("target_env")
+                or parent_delivery.get("chat_id_env")
+                or parent_delivery.get("allowed_chat_ids_env")
+                or cls.parent_telegram_chat_id_env
             ),
         )
 

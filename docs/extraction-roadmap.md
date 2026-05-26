@@ -79,7 +79,8 @@ delivery:
     allowed_child_chat_id_env: "LEARNBUDDY_ALLOWED_CHILD_CHAT_ID"
   parents:
     - type: "telegram"
-      target_env: "LEARNBUDDY_PARENT_TELEGRAM_CHAT"
+      bot_token_env: "LEARNBUDDY_PARENT_TELEGRAM_BOT_TOKEN"
+      target_env: "LEARNBUDDY_ALLOWED_PARENT_CHAT_ID"
 ```
 
 ## First extraction milestone

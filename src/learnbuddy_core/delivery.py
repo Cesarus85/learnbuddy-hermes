@@ -49,6 +49,9 @@ class DryRunDeliveryAdapter:
     def deliver_child(self, message: DeliveryMessage) -> DeliveryResult:
         return DeliveryResult(status="dry_run", adapter=self.adapter_name, target="child")
 
+    def deliver_parent(self, message: DeliveryMessage) -> DeliveryResult:
+        return DeliveryResult(status="dry_run", adapter=self.adapter_name, target="parent")
+
 
 class TelegramDeliveryAdapter:
     """Telegram Bot API adapter with env-based secrets and injectable transport."""
@@ -59,6 +62,12 @@ class TelegramDeliveryAdapter:
         self.transport = transport or _telegram_transport
 
     def deliver_child(self, message: DeliveryMessage) -> DeliveryResult:
+        return self._deliver(message)
+
+    def deliver_parent(self, message: DeliveryMessage) -> DeliveryResult:
+        return self._deliver(message)
+
+    def _deliver(self, message: DeliveryMessage) -> DeliveryResult:
         token = os.getenv(self.bot_token_env)
         chat_id = os.getenv(self.chat_id_env)
         missing = [name for name, value in ((self.bot_token_env, token), (self.chat_id_env, chat_id)) if not value]
@@ -92,12 +101,16 @@ class TelegramDeliveryAdapter:
         return DeliveryResult(status="sent", adapter="telegram", target=self.chat_id_env, message_id=str(message_id) if message_id is not None else None)
 
 
-def delivery_adapter_from_config(config: Any):
+def delivery_adapter_from_config(config: Any, *, recipient: str = "child"):
     mode = str(getattr(config, "delivery_mode", "dry_run"))
+    if recipient not in {"child", "parent"}:
+        raise ValueError(f"unsupported delivery recipient: {recipient}")
     if mode == "telegram":
+        token_attr = f"{recipient}_telegram_bot_token_env"
+        chat_attr = f"{recipient}_telegram_chat_id_env"
         return TelegramDeliveryAdapter(
-            bot_token_env=str(getattr(config, "child_telegram_bot_token_env")),
-            chat_id_env=str(getattr(config, "child_telegram_chat_id_env")),
+            bot_token_env=str(getattr(config, token_attr)),
+            chat_id_env=str(getattr(config, chat_attr)),
         )
     if mode == "dry_run":
         return DryRunDeliveryAdapter(adapter_name=mode)

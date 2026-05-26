@@ -108,3 +108,69 @@ delivery:
         "message_id": None,
         "error": None,
     }
+
+
+def test_parent_report_can_dry_run_notify_parent(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "parent-notifier-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "Was ist 1 + 1?",
+        "answer": "2",
+    }))
+    json.loads(plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": queued["exercise"]["id"]}))
+    json.loads(plugin.learnbuddy_submit_answer({"config_path": str(config_path), "answer": "2"}))
+
+    report = json.loads(plugin.learnbuddy_parent_report({"config_path": str(config_path), "notify": True}))
+
+    assert report["correct"] == 1
+    assert report["notification"] == {
+        "status": "dry_run",
+        "adapter": "dry_run",
+        "target": "parent",
+        "message_id": None,
+        "error": None,
+    }
+
+
+def test_parent_report_notify_uses_parent_telegram_target(tmp_path, monkeypatch):
+    plugin = load_plugin()
+    data_dir = tmp_path / "parent-telegram-notifier-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: telegram
+  child:
+    type: telegram
+    bot_token_env: CHILD_BOT_TOKEN_ENV
+    allowed_chat_ids_env: CHILD_CHAT_ID_ENV
+  parents:
+    - type: telegram
+      bot_token_env: PARENT_BOT_TOKEN_ENV
+      target_env: PARENT_CHAT_ID_ENV
+""".strip(),
+        encoding="utf-8",
+    )
+    for name in ["CHILD_BOT_TOKEN_ENV", "CHILD_CHAT_ID_ENV", "PARENT_BOT_TOKEN_ENV", "PARENT_CHAT_ID_ENV"]:
+        monkeypatch.delenv(name, raising=False)
+
+    report = json.loads(plugin.learnbuddy_parent_report({"config_path": str(config_path), "notify": True}))
+
+    assert report["notification"]["status"] == "not_configured"
+    assert report["notification"]["adapter"] == "telegram"
+    assert report["notification"]["target"] == "PARENT_CHAT_ID_ENV"
+    assert report["notification"]["error"] == "missing environment variables: PARENT_BOT_TOKEN_ENV, PARENT_CHAT_ID_ENV"

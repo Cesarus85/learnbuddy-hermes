@@ -91,9 +91,13 @@ delivery:
   telegram:
     child_bot_env: LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN
     allowed_child_chat_id_env: LEARNBUDDY_ALLOWED_CHILD_CHAT_ID
+  parents:
+    - type: telegram
+      bot_token_env: LEARNBUDDY_PARENT_TELEGRAM_BOT_TOKEN
+      target_env: LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
 ```
 
-`learnbuddy_next_exercise(..., deliver=True)` can deliver the opened prompt through the configured adapter. Use `delivery.mode: dry_run` for setup checks without network I/O.
+`learnbuddy_next_exercise(..., deliver=True)` can deliver the opened prompt through the configured child adapter. `learnbuddy_parent_report(..., notify=True)` can send the rendered parent report through the configured parent adapter. Use `delivery.mode: dry_run` for setup checks without network I/O.
 
 Until the setup wizard lands, treat this repository as a scaffold.
 

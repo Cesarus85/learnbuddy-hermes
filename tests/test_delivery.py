@@ -43,6 +43,29 @@ delivery:
     assert isinstance(delivery_adapter_from_config(config), TelegramDeliveryAdapter)
 
 
+def test_config_loads_parent_delivery_target_and_factory_uses_it():
+    config = LearnBuddyConfig.from_mapping({
+        "delivery": {
+            "mode": "telegram",
+            "parents": [
+                {
+                    "type": "telegram",
+                    "bot_token_env": "PARENT_BOT_TOKEN_ENV",
+                    "target_env": "PARENT_CHAT_ID_ENV",
+                }
+            ],
+        }
+    })
+
+    parent_adapter = delivery_adapter_from_config(config, recipient="parent")
+
+    assert config.parent_telegram_bot_token_env == "PARENT_BOT_TOKEN_ENV"
+    assert config.parent_telegram_chat_id_env == "PARENT_CHAT_ID_ENV"
+    assert isinstance(parent_adapter, TelegramDeliveryAdapter)
+    assert parent_adapter.bot_token_env == "PARENT_BOT_TOKEN_ENV"
+    assert parent_adapter.chat_id_env == "PARENT_CHAT_ID_ENV"
+
+
 def test_dry_run_delivery_adapter_returns_public_result_without_side_effects():
     adapter = DryRunDeliveryAdapter(adapter_name="telegram")
 
@@ -133,5 +156,16 @@ def test_delivery_adapter_factory_rejects_unknown_modes():
         delivery_adapter_from_config(config)
     except ValueError as exc:
         assert str(exc) == "unsupported delivery mode: telegran"
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_delivery_adapter_factory_rejects_unknown_recipients():
+    config = LearnBuddyConfig(delivery_mode="dry_run")
+
+    try:
+        delivery_adapter_from_config(config, recipient="teacher")
+    except ValueError as exc:
+        assert str(exc) == "unsupported delivery recipient: teacher"
     else:
         raise AssertionError("expected ValueError")
