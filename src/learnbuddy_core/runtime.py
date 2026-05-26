@@ -73,14 +73,25 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
 class LearnBuddyRuntime:
     """Local state machine for one bounded LearnBuddy child profile."""
 
-    def __init__(self, data_dir: str | Path, *, max_attempts: int = 3) -> None:
+    def __init__(
+        self,
+        data_dir: str | Path,
+        *,
+        max_attempts: int = 3,
+        child_id: str = "learner",
+        child_name: str = "Learner",
+        agent_name: str = "LearnBuddy",
+    ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
         self.paths = RuntimePaths(Path(data_dir).expanduser())
         self.max_attempts = max_attempts
+        self.child_id = child_id
+        self.child_name = child_name
+        self.agent_name = agent_name
         self.paths.data_dir.mkdir(parents=True, exist_ok=True)
         if not self.paths.state.exists():
-            self._write_state({"pending": None, "queue": []})
+            self._write_state({"pending": None, "queue": [], "profile": self._profile()})
 
     @property
     def data_dir(self) -> Path:
@@ -140,6 +151,9 @@ class LearnBuddyRuntime:
             "timestamp": _now(),
             "exercise_id": exercise["id"],
             "session_id": pending["id"],
+            "child_id": pending.get("child_id", self.child_id),
+            "child_name": pending.get("child_name", self.child_name),
+            "agent_name": pending.get("agent_name", self.agent_name),
             "subject": exercise.get("subject", "general"),
             "type": exercise.get("type", "short"),
             "answer": str(answer),
@@ -179,13 +193,26 @@ class LearnBuddyRuntime:
             if row.get("correct") is True:
                 bucket["correct"] += 1
         total = len(answers)
-        text = f"LearnBuddy Status: {correct}/{total} richtig, {exhausted} Aufgaben mit aufgebrauchten Versuchen."
-        return {"answers": total, "correct": correct, "exhausted": exhausted, "subjects": subjects, "text": text}
+        text = f"{self.agent_name} Status für {self.child_name}: {correct}/{total} richtig, {exhausted} Aufgaben mit aufgebrauchten Versuchen."
+        return {
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
+            "answers": total,
+            "correct": correct,
+            "exhausted": exhausted,
+            "subjects": subjects,
+            "text": text,
+        }
+
+    def _profile(self) -> dict[str, str]:
+        return {"child_id": self.child_id, "child_name": self.child_name, "agent_name": self.agent_name}
 
     def _state(self) -> dict[str, Any]:
-        state = _read_json(self.paths.state, {"pending": None, "queue": []})
+        state = _read_json(self.paths.state, {"pending": None, "queue": [], "profile": self._profile()})
         state.setdefault("pending", None)
         state.setdefault("queue", [])
+        state["profile"] = self._profile()
         return state
 
     def _write_state(self, state: dict[str, Any]) -> None:
@@ -209,6 +236,9 @@ class LearnBuddyRuntime:
         return {
             "id": f"sess-{uuid.uuid4().hex[:12]}",
             "exercise_id": exercise["id"],
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
             "subject": exercise.get("subject", "general"),
             "type": exercise.get("type", "short"),
             "prompt": exercise.get("prompt"),

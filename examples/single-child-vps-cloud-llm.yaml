@@ -6,6 +6,19 @@ family:
   language: de
   timezone: Europe/Berlin
 
+child:
+  id: emma
+  display_name: Emma
+
+agent:
+  name: Lumi
+
+safety:
+  max_attempts: 3
+
+storage:
+  data_dir: "${HERMES_HOME}/family/learnbuddy"
+
 llm:
   mode: cloud
   provider: openrouter

@@ -2,16 +2,23 @@ family:
   language: {{ language | default("de") }}
   timezone: {{ timezone | default("Europe/Berlin") }}
 
-children:
-  - id: {{ child_id }}
-    name: {{ child_name }}
-    agent_name: {{ child_agent_name }}
-    grade: {{ grade }}
-    subjects: [math, german, english]
-    max_attempts: 3
-    allowed_hours:
-      from: "07:00"
-      to: "21:00"
+child:
+  id: {{ child_id }}
+  display_name: {{ child_name }}
+  grade: {{ grade }}
+  subjects: [math, german, english]
+
+agent:
+  name: {{ child_agent_name }}
+
+safety:
+  max_attempts: 3
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
+
+storage:
+  data_dir: "${HERMES_HOME}/family/learnbuddy"
 
 delivery:
   mode: telegram

@@ -35,6 +35,7 @@ A minimal single-child setup should be expressible without code edits:
 
 ```yaml
 child:
+  id: "learner"
   display_name: "Learner"
   grade: "5"
   school_context: "generic"
@@ -42,6 +43,8 @@ child:
     - math
     - german
     - english
+agent:
+  name: "LearnBuddy"
 
 safety:
   max_attempts: 3
@@ -106,4 +109,4 @@ Keep these out of the repository:
 - production Telegram message IDs
 - production `.env` files or token-bearing config
 - private Obsidian links
-- private operational secrets
+- private workstation/server operational secrets

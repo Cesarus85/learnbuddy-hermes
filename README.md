@@ -68,14 +68,27 @@ tests/                         regression tests
 
 ## Quick start
 
-Not ready yet. Planned target:
+Not ready yet. Current pre-alpha smoke test:
 
 ```bash
-learnbuddy setup
-learnbuddy doctor
+python -m pip install -e '.[test]'
+learnbuddy doctor --config examples/single-child-telegram.yaml
+pytest -q
 ```
 
-Until then, treat this repository as a scaffold.
+The public config surface already supports neutral child and agent identity:
+
+```yaml
+child:
+  id: emma
+  display_name: Emma
+agent:
+  name: Lumi
+safety:
+  max_attempts: 3
+```
+
+Until the setup wizard lands, treat this repository as a scaffold.
 
 ## Privacy promise for the project
 

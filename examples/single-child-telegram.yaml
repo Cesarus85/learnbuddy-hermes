@@ -2,23 +2,30 @@ family:
   language: de
   timezone: Europe/Berlin
 
-children:
-  - id: emma
-    name: Emma
-    agent_name: Lumi
-    grade: 5
-    school_context: Beispielschule
-    subjects: [math, german, english]
-    max_attempts: 3
-    allowed_hours:
-      from: "07:00"
-      to: "21:00"
+child:
+  id: emma
+  display_name: Emma
+  grade: 5
+  school_context: Beispielschule
+  subjects: [math, german, english]
+
+agent:
+  name: Lumi
+
+safety:
+  max_attempts: 3
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
 
 delivery:
   mode: telegram
   telegram:
     child_bot_env: LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN
     allowed_child_chat_id_env: LEARNBUDDY_ALLOWED_CHILD_CHAT_ID
+
+storage:
+  data_dir: "${HERMES_HOME}/family/learnbuddy"
 
 models:
   child_default:

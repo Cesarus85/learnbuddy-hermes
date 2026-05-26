@@ -2,13 +2,24 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-from .config import default_storage_dir
+from .config import LearnBuddyConfig
+
+
+def _config_from_args(args: argparse.Namespace) -> LearnBuddyConfig:
+    config_path = getattr(args, "config", None)
+    if config_path:
+        return LearnBuddyConfig.from_yaml(config_path)
+    return LearnBuddyConfig()
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    storage = default_storage_dir()
+    config = _config_from_args(args)
+    storage = config.resolved_storage_dir()
     print("LearnBuddy doctor")
+    print(f"child_id={config.child_id}")
+    print(f"child_name={config.child_name}")
+    print(f"agent_name={config.agent_name}")
+    print(f"max_attempts={config.max_attempts}")
     print(f"storage_dir={storage}")
     print(f"storage_exists={storage.exists()}")
     print("status=pre-alpha scaffold")
@@ -25,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="learnbuddy")
     sub = parser.add_subparsers(dest="command", required=True)
     doctor = sub.add_parser("doctor", help="check local LearnBuddy prerequisites")
+    doctor.add_argument("--config", help="path to learnbuddy.yaml")
     doctor.set_defaults(func=cmd_doctor)
     setup = sub.add_parser("setup", help="interactive setup wizard (planned)")
     setup.set_defaults(func=cmd_setup)

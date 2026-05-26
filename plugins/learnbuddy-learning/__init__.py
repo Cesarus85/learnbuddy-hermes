@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from learnbuddy_core.config import default_storage_dir
+from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
@@ -18,9 +18,19 @@ PLUGIN_VERSION = "0.1.0-alpha.0"
 
 def _runtime(args: dict[str, Any] | None = None) -> LearnBuddyRuntime:
     args = args or {}
-    data_dir = Path(args.get("data_dir") or default_storage_dir())
-    max_attempts = int(args.get("max_attempts") or 3)
-    return LearnBuddyRuntime(data_dir, max_attempts=max_attempts)
+    config = LearnBuddyConfig.from_yaml(args["config_path"]) if args.get("config_path") else LearnBuddyConfig()
+    data_dir = Path(args.get("data_dir") or config.resolved_storage_dir())
+    max_attempts = int(args.get("max_attempts") or config.max_attempts)
+    child_id = str(args.get("child_id") or config.child_id)
+    child_name = str(args.get("child_name") or config.child_name)
+    agent_name = str(args.get("agent_name") or config.agent_name)
+    return LearnBuddyRuntime(
+        data_dir,
+        max_attempts=max_attempts,
+        child_id=child_id,
+        child_name=child_name,
+        agent_name=agent_name,
+    )
 
 
 def _json(data: Any) -> str:
