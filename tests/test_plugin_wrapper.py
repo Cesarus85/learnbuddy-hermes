@@ -72,3 +72,39 @@ storage:
     assert exhausted["max_attempts"] == 2
     assert report["child_name"] == "Jamie"
     assert report["agent_name"] == "LernKumpel"
+
+
+def test_next_exercise_can_dry_run_deliver_opened_prompt(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "delivery-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "Was ist 2 + 2?",
+        "answer": "4",
+    }))
+
+    opened = json.loads(plugin.learnbuddy_next_exercise({
+        "config_path": str(config_path),
+        "exercise_id": queued["exercise"]["id"],
+        "deliver": True,
+    }))
+
+    assert opened["status"] == "opened"
+    assert opened["delivery"] == {
+        "status": "dry_run",
+        "adapter": "dry_run",
+        "target": "child",
+        "message_id": None,
+        "error": None,
+    }

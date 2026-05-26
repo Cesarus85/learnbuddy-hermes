@@ -69,10 +69,14 @@ models:
     model: "optional"
 
 delivery:
+  mode: "telegram"
   child:
     type: "telegram"
-    bot_token_env: "LEARNBUDDY_TELEGRAM_BOT_TOKEN"
-    allowed_chat_ids_env: "LEARNBUDDY_TELEGRAM_ALLOWED_CHATS"
+    bot_token_env: "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN"
+    allowed_chat_ids_env: "LEARNBUDDY_ALLOWED_CHILD_CHAT_ID"
+  telegram:
+    child_bot_env: "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN"
+    allowed_child_chat_id_env: "LEARNBUDDY_ALLOWED_CHILD_CHAT_ID"
   parents:
     - type: "telegram"
       target_env: "LEARNBUDDY_PARENT_TELEGRAM_CHAT"

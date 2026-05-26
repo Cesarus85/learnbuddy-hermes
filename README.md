@@ -76,7 +76,7 @@ learnbuddy doctor --config examples/single-child-telegram.yaml
 pytest -q
 ```
 
-The public config surface already supports neutral child and agent identity:
+The public config surface already supports neutral child/agent identity and a transport adapter boundary:
 
 ```yaml
 child:
@@ -86,7 +86,14 @@ agent:
   name: Lumi
 safety:
   max_attempts: 3
+delivery:
+  mode: telegram
+  telegram:
+    child_bot_env: LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN
+    allowed_child_chat_id_env: LEARNBUDDY_ALLOWED_CHILD_CHAT_ID
 ```
+
+`learnbuddy_next_exercise(..., deliver=True)` can deliver the opened prompt through the configured adapter. Use `delivery.mode: dry_run` for setup checks without network I/O.
 
 Until the setup wizard lands, treat this repository as a scaffold.
 

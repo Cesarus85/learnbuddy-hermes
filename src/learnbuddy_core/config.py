@@ -17,6 +17,9 @@ class LearnBuddyConfig:
     timezone: str = "Europe/Berlin"
     storage_dir: str | None = None
     max_attempts: int = 3
+    delivery_mode: str = "dry_run"
+    child_telegram_bot_token_env: str = "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN"
+    child_telegram_chat_id_env: str = "LEARNBUDDY_ALLOWED_CHILD_CHAT_ID"
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "LearnBuddyConfig":
@@ -34,6 +37,10 @@ class LearnBuddyConfig:
         agent_map = _mapping(agent)
         safety = _mapping(data.get("safety"))
         storage = _mapping(data.get("storage"))
+        delivery = _mapping(data.get("delivery"))
+        telegram = _mapping(delivery.get("telegram"))
+        child_delivery = _mapping(delivery.get("child"))
+        child_delivery_type = child_delivery.get("type")
 
         storage_dir = data.get("storage_dir") or storage.get("data_dir")
         if storage_dir is not None:
@@ -53,6 +60,18 @@ class LearnBuddyConfig:
             timezone=str(family.get("timezone") or safety.get("timezone") or data.get("timezone") or cls.timezone),
             storage_dir=storage_dir,
             max_attempts=int(safety.get("max_attempts") or child.get("max_attempts") or data.get("max_attempts") or cls.max_attempts),
+            delivery_mode=str(delivery.get("mode") or child_delivery_type or cls.delivery_mode),
+            child_telegram_bot_token_env=str(
+                telegram.get("child_bot_env")
+                or child_delivery.get("bot_token_env")
+                or cls.child_telegram_bot_token_env
+            ),
+            child_telegram_chat_id_env=str(
+                telegram.get("allowed_child_chat_id_env")
+                or child_delivery.get("allowed_chat_ids_env")
+                or child_delivery.get("chat_id_env")
+                or cls.child_telegram_chat_id_env
+            ),
         )
 
     def resolved_storage_dir(self) -> Path:

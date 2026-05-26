@@ -10,15 +10,21 @@ from pathlib import Path
 from typing import Any
 
 from learnbuddy_core.config import LearnBuddyConfig
+from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
 PLUGIN_VERSION = "0.1.0-alpha.0"
 
 
+def _config(args: dict[str, Any] | None = None) -> LearnBuddyConfig:
+    args = args or {}
+    return LearnBuddyConfig.from_yaml(args["config_path"]) if args.get("config_path") else LearnBuddyConfig()
+
+
 def _runtime(args: dict[str, Any] | None = None) -> LearnBuddyRuntime:
     args = args or {}
-    config = LearnBuddyConfig.from_yaml(args["config_path"]) if args.get("config_path") else LearnBuddyConfig()
+    config = _config(args)
     data_dir = Path(args.get("data_dir") or config.resolved_storage_dir())
     max_attempts = int(args.get("max_attempts") or config.max_attempts)
     child_id = str(args.get("child_id") or config.child_id)
@@ -35,6 +41,10 @@ def _runtime(args: dict[str, Any] | None = None) -> LearnBuddyRuntime:
 
 def _json(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, sort_keys=True)
+
+
+def _delivery_adapter(config: LearnBuddyConfig):
+    return delivery_adapter_from_config(config)
 
 
 def learnbuddy_queue_exercise(args: dict[str, Any] | None = None) -> str:
@@ -57,6 +67,7 @@ def learnbuddy_queue_exercise(args: dict[str, Any] | None = None) -> str:
 def learnbuddy_next_exercise(args: dict[str, Any] | None = None) -> str:
     """Open the next matching exercise or queue it if another is pending."""
     args = dict(args or {})
+    config = _config(args)
     runtime = _runtime(args)
     result = runtime.open_exercise(
         args.get("exercise_id"),
@@ -64,6 +75,14 @@ def learnbuddy_next_exercise(args: dict[str, Any] | None = None) -> str:
         mode=args.get("mode", "manual"),
         requested_by=args.get("requested_by", "parent"),
     )
+    if args.get("deliver") and result.get("status") == "opened":
+        delivery = _delivery_adapter(config).deliver_child(
+            DeliveryMessage(
+                text=str(result.get("prompt") or ""),
+                metadata={"session_id": result.get("session", {}).get("id")},
+            )
+        )
+        result["delivery"] = delivery.to_dict()
     return _json(result)
 
 
