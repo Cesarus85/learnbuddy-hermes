@@ -22,6 +22,10 @@ build/
 learnbuddy.db
 *.sqlite
 *.sqlite3
+learnbuddy.yaml
+data/
+restored-learnbuddy-data/
+learnbuddy-backup*.zip
 
 # OS/editor
 .DS_Store

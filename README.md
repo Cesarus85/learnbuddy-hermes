@@ -1,52 +1,54 @@
 # LearnBuddy Hermes
 
-Self-hosted, parent-controlled learning buddy for families, built as a Hermes Agent extension pack.
+Self-hosted, parent-controlled learning practice for families, built as a Hermes Agent extension pack.
 
-> Status: early scaffold. Do not use this for real children yet.
+> Status: `0.1.0-alpha` preparation. The core CLI, dry-run delivery, setup, doctor, backup/restore, examples, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
 
 ## What this is
 
-LearnBuddy is a safe, bounded learning companion that can:
+LearnBuddy is a bounded learning companion that can:
 
-- send short exercises to a child
+- queue short exercises for a child
+- open one pending exercise at a time
 - evaluate answers kindly
-- limit attempts and explain when attempts are used up
-- track learning progress locally
-- send parent-facing summaries
-- run via Telegram first, then Web/PWA and later iOS
+- limit attempts and give a final explanation when attempts are used up
+- track progress in local JSON/JSONL runtime files
+- render parent-facing summaries
+- run network-free in `dry_run` mode or via Telegram adapters
 
 ## What this is not
 
 - not a replacement for parents, teachers, school, tutoring, or professional advice
 - not a hosted child-AI SaaS
 - not a general-purpose child chatbot with full system access
-- not connected to ads, tracking, or analytics
+- not connected to ads, tracking, telemetry, or analytics
+- not a place for production child logs, private chat exports, or real credentials
 
 ## Deployment modes
 
 Supported design targets:
 
-1. Homehosting: Raspberry Pi, mini-PC, NAS, Mac mini, local server.
-2. VPS + cloud LLM: useful when a family already uses OpenAI/OpenRouter/Gemini/etc.
-3. Local LearnBuddy + cloud LLM: child data and orchestration local, model calls in the cloud.
+1. Homehosting: Raspberry Pi, mini-PC, NAS, Mac mini, or local server.
+2. VPS + cloud LLM: useful when a family already uses a cloud model provider.
+3. Local LearnBuddy + cloud LLM: child data and orchestration stay local while model calls go to the configured provider.
 4. Advanced: VPS LearnBuddy connected to a private/local model endpoint via VPN/Tailscale.
 
 ## Current roadmap
 
-- `0.1`: Telegram self-hosted MVP
+- `0.1`: Telegram self-hosted MVP, local CLI lifecycle, setup, doctor, backup/restore, demo fixtures
 - `0.2`: VPS/cloud-LLM setup docs and hardening
 - `0.3`: Parent dashboard / PWA
 - `0.4`: multiple children and parent devices
 - `0.5`: iOS companion app
 
-See [`docs/extraction-roadmap.md`](docs/extraction-roadmap.md) for the public-safe extraction plan from private reference behavior into generic LearnBuddy modules.
+See [`docs/extraction-roadmap.md`](docs/extraction-roadmap.md) for the public-safe extraction plan.
 
 ## Safety baseline
 
-The child-facing Hermes profile must not have dangerous generic tools enabled. Default forbidden toolsets:
+The child-facing Hermes profile must be least-privilege. Default forbidden toolsets:
 
 - terminal
-- file
+- file access
 - code execution
 - smart home / Home Assistant
 - generic messaging
@@ -57,24 +59,33 @@ Only bounded LearnBuddy tools should be exposed to the child profile.
 ## Repository layout
 
 ```text
-plugins/learnbuddy-learning/   Hermes plugin wrapper
-src/learnbuddy_core/           shared core logic
-scripts/learnbuddy             local CLI entry point
-templates/                     profile/config templates
-examples/                      safe example configs
-docs/                          setup, safety, privacy, roadmap
-tests/                         regression tests
+plugins/learnbuddy-learning/        Hermes plugin wrapper
+src/learnbuddy_core/                shared core logic
+scripts/learnbuddy                  local CLI entry point
+examples/                           safe example configs
+examples/exercises/de/              synthetic exercise fixtures
+templates/                          profile/config templates
+docs/                               setup, safety, privacy, roadmap, demo flow
+tests/                              regression and public-alpha asset tests
 ```
 
-## Quick start
+## Quick start: local dry-run demo
 
-Not ready yet. Current pre-alpha smoke test:
+The fastest safe smoke test uses no Telegram token and sends nothing to the network:
 
 ```bash
+python3 -m venv .venv
+. .venv/bin/activate
 python -m pip install -e '.[test]'
-learnbuddy setup --config ./learnbuddy.yaml --data-dir ./data/learnbuddy --child-id learner --child-name Learner --agent-name LearnBuddy
+
+learnbuddy setup \
+  --config ./learnbuddy.yaml \
+  --data-dir ./data/learnbuddy \
+  --child-id learner \
+  --child-name Learner \
+  --agent-name LearnBuddy
+
 learnbuddy doctor --config ./learnbuddy.yaml
-learnbuddy doctor --config ./learnbuddy.yaml --format json
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
 learnbuddy next --config ./learnbuddy.yaml --deliver
 learnbuddy answer --config ./learnbuddy.yaml "4"
@@ -85,11 +96,23 @@ learnbuddy restore --archive ./learnbuddy-backup.zip --data-dir ./restored-learn
 pytest -q
 ```
 
-`learnbuddy setup` creates a starter `learnbuddy.yaml` plus the local storage directory. It is deliberately public-safe: it writes dry-run delivery by default and does not create or print Telegram tokens, chat IDs, Hermes credentials, or child production data. Use `--force` only when you intentionally want to overwrite the config file.
+Expected delivery status in this quickstart: `dry_run` for both child delivery and parent notification.
 
-`learnbuddy doctor` validates the public config, storage path, and delivery environment without printing secret values. Telegram mode reports missing env-var names; `dry_run` mode stays network-free for setup checks. Runtime CLI commands (`queue`, `next`, `answer`, `status`, `report`) return JSON and use the same local state machine as the plugin wrapper. `backup` and `restore` move only the local runtime data files (`state.json`, `exercises.jsonl`, `sessions.jsonl`, `answers.jsonl`) in a zip archive and refuse to overwrite existing restored data unless `--force` is passed.
+## Demo exercise fixture
 
-The public config surface already supports neutral child/agent identity and a transport adapter boundary:
+Synthetic German grade-5 sample exercises live in:
+
+```text
+examples/exercises/de/grade-5-mixed.jsonl
+```
+
+They cover `math`, `german`, and `english` and are validated by `tests/test_public_alpha_assets.py`. They are examples, not a curriculum.
+
+See [`docs/demo-flow.md`](docs/demo-flow.md) for a full copy/paste demo using the fixture.
+
+## Telegram configuration
+
+`learnbuddy setup` writes `delivery.mode: dry_run` by default. Telegram mode is opt-in and uses environment variable names, not secret values in YAML:
 
 ```yaml
 child:
@@ -110,10 +133,17 @@ delivery:
       target_env: LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
 ```
 
-`learnbuddy_next_exercise(..., deliver=True)` can deliver the opened prompt through the configured child adapter. `learnbuddy_parent_report(..., notify=True)` can send the rendered parent report through the configured parent adapter. Use `delivery.mode: dry_run` for setup checks without network I/O.
+`learnbuddy next --deliver` uses the child adapter. `learnbuddy report --notify` uses the parent adapter. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
 
-Until the setup wizard lands, treat this repository as a scaffold.
+## Docs
+
+- [`docs/quickstart-telegram.md`](docs/quickstart-telegram.md)
+- [`docs/quickstart-vps.md`](docs/quickstart-vps.md)
+- [`docs/demo-flow.md`](docs/demo-flow.md)
+- [`docs/child-safety-model.md`](docs/child-safety-model.md)
+- [`PRIVACY.md`](PRIVACY.md)
+- [`SECURITY.md`](SECURITY.md)
 
 ## Privacy promise for the project
 
-No real child data, chat IDs, tokens, private family logs, or production screenshots belong in this repository.
+No real child data, chat IDs, tokens, private family logs, production screenshots, or private deployment paths belong in this repository.

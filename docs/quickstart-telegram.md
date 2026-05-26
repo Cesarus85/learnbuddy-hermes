@@ -1,14 +1,94 @@
 # Telegram Quickstart
 
-Status: planned.
+This guide connects LearnBuddy to Telegram without storing credentials in git.
 
-Target flow:
+For a network-free first run, start with [`demo-flow.md`](demo-flow.md). Telegram should be enabled only after the local `dry_run` lifecycle is green.
 
-1. Install Hermes Agent.
-2. Configure an LLM provider.
-3. Create a dedicated child Telegram bot.
-4. Run `learnbuddy setup --mode telegram`.
-5. Run `learnbuddy doctor`.
-6. Send a test exercise.
+## 1. Install and run the dry-run setup
 
-Never reuse a parent/admin bot token for the child profile.
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[test]'
+
+learnbuddy setup \
+  --config ./learnbuddy.yaml \
+  --data-dir ./data/learnbuddy \
+  --child-id learner \
+  --child-name Learner \
+  --agent-name LearnBuddy
+
+learnbuddy doctor --config ./learnbuddy.yaml
+```
+
+The generated config uses:
+
+```yaml
+delivery:
+  mode: dry_run
+```
+
+Keep this mode until you have verified the basic queue/answer/report flow.
+
+## 2. Create dedicated Telegram bots
+
+Recommended separation:
+
+- one child-facing bot for exercises and answers
+- one parent-facing bot for summaries and admin messages
+
+Do not reuse a parent/admin bot as the child bot. Do not commit bot tokens, chat IDs, exported chats, screenshots with IDs, or `.env` files.
+
+## 3. Store Telegram values in environment variables
+
+Use a local shell, process manager, or secret store. Configure these variable names with your own private values:
+
+```text
+LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN
+LEARNBUDDY_ALLOWED_CHILD_CHAT_ID
+LEARNBUDDY_PARENT_TELEGRAM_BOT_TOKEN
+LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
+```
+
+Keep real values out of docs and git.
+
+## 4. Switch config to Telegram mode
+
+Edit `learnbuddy.yaml`:
+
+```yaml
+delivery:
+  mode: telegram
+  telegram:
+    child_bot_env: LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN
+    allowed_child_chat_id_env: LEARNBUDDY_ALLOWED_CHILD_CHAT_ID
+  parents:
+    - type: telegram
+      bot_token_env: LEARNBUDDY_PARENT_TELEGRAM_BOT_TOKEN
+      target_env: LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
+```
+
+## 5. Validate before sending
+
+```bash
+learnbuddy doctor --config ./learnbuddy.yaml
+learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
+learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy answer --config ./learnbuddy.yaml "4"
+learnbuddy report --config ./learnbuddy.yaml --notify
+```
+
+Expected behavior:
+
+- `doctor` prints variable names only, never secret values.
+- `next --deliver` sends the opened exercise through the child adapter when Telegram is configured.
+- `report --notify` sends a parent summary through the parent adapter when configured.
+- Missing or invalid Telegram configuration returns a safe error/not-configured status rather than leaking credentials.
+
+## Safety checklist
+
+- Child profile has no terminal, file, code execution, smart-home, purchasing, or generic messaging tools.
+- Parent controls setup and credentials.
+- Exercises are age-appropriate and synthetic until you intentionally enter family-specific content locally.
+- Backups are treated as private learning data.
+- If anything routes to the wrong recipient, stop and fix routing before continuing.
