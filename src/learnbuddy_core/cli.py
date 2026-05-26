@@ -8,6 +8,7 @@ from typing import Any
 from .config import LearnBuddyConfig
 from .delivery import DeliveryMessage, delivery_adapter_from_config
 from .doctor import build_doctor_report, doctor_exit_code, format_text_report
+from .maintenance import backup_runtime_data, create_setup, restore_runtime_data
 from .notifier import ParentNotifier
 from .runtime import LearnBuddyRuntime
 
@@ -46,9 +47,37 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    print("learnbuddy setup is not implemented yet.")
-    print("This scaffold intentionally does not touch Hermes profiles or Telegram tokens yet.")
-    return 2
+    result = create_setup(
+        config_path=args.config,
+        data_dir=args.data_dir,
+        child_id=args.child_id,
+        child_name=args.child_name,
+        agent_name=args.agent_name,
+        delivery_mode=args.delivery_mode,
+        force=args.force,
+    )
+    if args.format == "json":
+        _print_json(result)
+    else:
+        print(f"learnbuddy setup {result['status']}")
+        for key in ("config_path", "storage_dir", "error"):
+            if result.get(key):
+                print(f"{key}={result[key]}")
+    return 0 if result["status"] == "created" else 1
+
+
+def cmd_backup(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    data_dir = Path(getattr(args, "data_dir", None) or config.resolved_storage_dir())
+    result = backup_runtime_data(data_dir=data_dir, output=args.output)
+    _print_json(result)
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    result = restore_runtime_data(archive=args.archive, data_dir=args.data_dir, force=args.force)
+    _print_json(result)
+    return 0 if result["status"] == "restored" else 1
 
 
 def cmd_queue(args: argparse.Namespace) -> int:
@@ -114,8 +143,27 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--config", help="path to learnbuddy.yaml")
     doctor.add_argument("--format", choices=["text", "json"], default="text", help="doctor output format")
     doctor.set_defaults(func=cmd_doctor)
-    setup = sub.add_parser("setup", help="interactive setup wizard (planned)")
+    setup = sub.add_parser("setup", help="create a public-safe starter config and storage directory")
+    setup.add_argument("--config", default="learnbuddy.yaml", help="path to write learnbuddy.yaml")
+    setup.add_argument("--data-dir", help="LearnBuddy storage directory to create")
+    setup.add_argument("--child-id", default="learner")
+    setup.add_argument("--child-name", default="Learner")
+    setup.add_argument("--agent-name", default="LearnBuddy")
+    setup.add_argument("--delivery-mode", choices=["dry_run", "telegram"], default="dry_run")
+    setup.add_argument("--format", choices=["text", "json"], default="json")
+    setup.add_argument("--force", action="store_true", help="overwrite an existing config file")
     setup.set_defaults(func=cmd_setup)
+
+    backup = sub.add_parser("backup", help="create a zip backup of local runtime data")
+    _add_runtime_options(backup)
+    backup.add_argument("--output", required=True, help="zip archive path to create")
+    backup.set_defaults(func=cmd_backup)
+
+    restore = sub.add_parser("restore", help="restore a LearnBuddy runtime zip backup")
+    restore.add_argument("--archive", required=True, help="backup zip archive to restore")
+    restore.add_argument("--data-dir", required=True, help="target LearnBuddy storage directory")
+    restore.add_argument("--force", action="store_true", help="overwrite existing runtime files")
+    restore.set_defaults(func=cmd_restore)
 
     queue = sub.add_parser("queue", help="create an exercise in local LearnBuddy storage")
     _add_runtime_options(queue)

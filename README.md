@@ -72,17 +72,22 @@ Not ready yet. Current pre-alpha smoke test:
 
 ```bash
 python -m pip install -e '.[test]'
-learnbuddy doctor --config examples/single-child-telegram.yaml
-learnbuddy doctor --config examples/single-child-telegram.yaml --format json
-learnbuddy queue --config examples/single-child-telegram.yaml --subject math --prompt "2 + 2?" --answer "4"
-learnbuddy next --config examples/single-child-telegram.yaml --deliver
-learnbuddy answer --config examples/single-child-telegram.yaml "4"
-learnbuddy status --config examples/single-child-telegram.yaml
-learnbuddy report --config examples/single-child-telegram.yaml --notify
+learnbuddy setup --config ./learnbuddy.yaml --data-dir ./data/learnbuddy --child-id learner --child-name Learner --agent-name LearnBuddy
+learnbuddy doctor --config ./learnbuddy.yaml
+learnbuddy doctor --config ./learnbuddy.yaml --format json
+learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
+learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy answer --config ./learnbuddy.yaml "4"
+learnbuddy status --config ./learnbuddy.yaml
+learnbuddy report --config ./learnbuddy.yaml --notify
+learnbuddy backup --config ./learnbuddy.yaml --output ./learnbuddy-backup.zip
+learnbuddy restore --archive ./learnbuddy-backup.zip --data-dir ./restored-learnbuddy-data
 pytest -q
 ```
 
-`learnbuddy doctor` validates the public config, storage path, and delivery environment without printing secret values. Telegram mode reports missing env-var names; `dry_run` mode stays network-free for setup checks. Runtime CLI commands (`queue`, `next`, `answer`, `status`, `report`) return JSON and use the same local state machine as the plugin wrapper.
+`learnbuddy setup` creates a starter `learnbuddy.yaml` plus the local storage directory. It is deliberately public-safe: it writes dry-run delivery by default and does not create or print Telegram tokens, chat IDs, Hermes credentials, or child production data. Use `--force` only when you intentionally want to overwrite the config file.
+
+`learnbuddy doctor` validates the public config, storage path, and delivery environment without printing secret values. Telegram mode reports missing env-var names; `dry_run` mode stays network-free for setup checks. Runtime CLI commands (`queue`, `next`, `answer`, `status`, `report`) return JSON and use the same local state machine as the plugin wrapper. `backup` and `restore` move only the local runtime data files (`state.json`, `exercises.jsonl`, `sessions.jsonl`, `answers.jsonl`) in a zip archive and refuse to overwrite existing restored data unless `--force` is passed.
 
 The public config surface already supports neutral child/agent identity and a transport adapter boundary:
 

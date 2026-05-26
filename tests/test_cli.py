@@ -182,3 +182,91 @@ delivery:
 
     assert report["notification"]["status"] == "dry_run"
     assert report["notification"]["target"] == "parent"
+
+
+def test_cli_setup_creates_public_safe_config_and_storage(capsys, tmp_path):
+    config_path = tmp_path / "learnbuddy.yaml"
+    data_dir = tmp_path / "learnbuddy-data"
+
+    assert main([
+        "setup",
+        "--config", str(config_path),
+        "--data-dir", str(data_dir),
+        "--child-id", "learner-1",
+        "--child-name", "Robin",
+        "--agent-name", "StudyFox",
+        "--delivery-mode", "dry_run",
+        "--format", "json",
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "created"
+    assert result["config_path"] == str(config_path)
+    assert result["storage_dir"] == str(data_dir)
+    assert data_dir.exists()
+    text = config_path.read_text(encoding="utf-8")
+    assert "id: learner-1" in text
+    assert "display_name: Robin" in text
+    assert "name: StudyFox" in text
+    assert "mode: dry_run" in text
+    assert "TOKEN" not in text
+    assert "CHAT" not in text
+
+
+def test_cli_setup_refuses_to_overwrite_config_without_force(capsys, tmp_path):
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text("child:\n  id: existing\n", encoding="utf-8")
+
+    assert main(["setup", "--config", str(config_path)]) == 1
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "exists"
+    assert "use --force" in result["error"]
+    assert "existing" in config_path.read_text(encoding="utf-8")
+
+
+def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
+    data_dir = tmp_path / "learnbuddy-data"
+    archive_path = tmp_path / "learnbuddy-backup.zip"
+    restore_dir = tmp_path / "restored-data"
+
+    assert main(["queue", "--data-dir", str(data_dir), "--subject", "math", "--prompt", "3 + 4?", "--answer", "7"]) == 0
+    queued = json.loads(capsys.readouterr().out)
+    assert main(["next", "--data-dir", str(data_dir), "--exercise-id", queued["exercise"]["id"]]) == 0
+    capsys.readouterr()
+    assert main(["answer", "--data-dir", str(data_dir), "7"]) == 0
+    capsys.readouterr()
+
+    assert main(["backup", "--data-dir", str(data_dir), "--output", str(archive_path)]) == 0
+    backup = json.loads(capsys.readouterr().out)
+    assert backup["status"] == "created"
+    assert backup["archive_path"] == str(archive_path)
+    assert archive_path.exists()
+    assert set(backup["files"]) >= {"answers.jsonl", "exercises.jsonl", "sessions.jsonl", "state.json"}
+
+    assert main(["restore", "--archive", str(archive_path), "--data-dir", str(restore_dir)]) == 0
+    restore = json.loads(capsys.readouterr().out)
+    assert restore["status"] == "restored"
+    assert restore["data_dir"] == str(restore_dir)
+    assert sorted(restore["files"]) == sorted(backup["files"])
+    assert (restore_dir / "answers.jsonl").read_text(encoding="utf-8") == (data_dir / "answers.jsonl").read_text(encoding="utf-8")
+
+
+def test_cli_restore_refuses_to_overwrite_existing_data_without_force(capsys, tmp_path):
+    data_dir = tmp_path / "learnbuddy-data"
+    archive_path = tmp_path / "learnbuddy-backup.zip"
+    restore_dir = tmp_path / "restored-data"
+    restore_dir.mkdir()
+    (restore_dir / "state.json").write_text('{"pending": "keep"}\n', encoding="utf-8")
+
+    assert main(["queue", "--data-dir", str(data_dir), "--prompt", "A?", "--answer", "B"]) == 0
+    capsys.readouterr()
+    assert main(["backup", "--data-dir", str(data_dir), "--output", str(archive_path)]) == 0
+    capsys.readouterr()
+
+    assert main(["restore", "--archive", str(archive_path), "--data-dir", str(restore_dir)]) == 1
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "exists"
+    assert "use --force" in result["error"]
+    assert (restore_dir / "state.json").read_text(encoding="utf-8") == '{"pending": "keep"}\n'

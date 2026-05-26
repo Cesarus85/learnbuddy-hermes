@@ -107,6 +107,8 @@ Phase 3 doctor/CLI slice adds:
 - text and JSON `learnbuddy doctor` output
 - storage and delivery environment checks that report env-var names only, not values
 - JSON runtime commands: `learnbuddy queue`, `next`, `answer`, `status`, and `report`
+- public-safe `learnbuddy setup` that creates a starter config and local storage without secrets
+- zip-based `learnbuddy backup` and `learnbuddy restore` for runtime data files only
 
 If this cannot run against synthetic data, it is not ready to touch real family workflows. Tiny hammer, big nail.
 
