@@ -210,7 +210,7 @@ learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnb
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 
-`doctor` reports missing variable names, not secret values. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification.
+`doctor` reports missing variable names, not secret values. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background.
 
 ## 9. VPS notes
 

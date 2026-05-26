@@ -169,9 +169,10 @@ class LearnBuddyRuntime:
             "input_mode": input_mode,
         }
         _append_jsonl(self.paths.answers, answer_row)
+        promoted_session = None
         if evaluation.correct or evaluation.exhausted:
             state["pending"] = None
-            self._promote_next(state)
+            promoted_session = self._promote_next(state)
         else:
             state["pending"] = pending
         self._write_state(state)
@@ -183,6 +184,7 @@ class LearnBuddyRuntime:
             "exhausted": evaluation.exhausted,
             "feedback": evaluation.feedback,
             "answer": answer_row,
+            "promoted_session": promoted_session,
         }
 
     def parent_report(self) -> dict[str, Any]:
@@ -292,13 +294,14 @@ class LearnBuddyRuntime:
             "timestamp": _now(),
         }
 
-    def _promote_next(self, state: dict[str, Any]) -> None:
+    def _promote_next(self, state: dict[str, Any]) -> dict[str, Any] | None:
         queue = state.setdefault("queue", [])
         if not queue:
-            return
+            return None
         next_session = queue.pop(0)
         next_session.pop("queued_at", None)
         next_session["timestamp"] = _now()
         next_session["attempts"] = 0
         state["pending"] = next_session
         _append_jsonl(self.paths.sessions, next_session)
+        return next_session

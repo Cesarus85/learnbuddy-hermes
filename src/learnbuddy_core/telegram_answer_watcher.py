@@ -104,12 +104,22 @@ def process_child_telegram_answers(
     message = candidate["message"]
     answer_text = str(message.get("text") or "").strip()
     result = runtime.submit_answer(answer_text, input_mode="text")
+    promoted_session = result.get("promoted_session") if isinstance(result.get("promoted_session"), dict) else None
     child_delivery = None
+    next_child_delivery = None
     parent_delivery = None
     if send_feedback:
-        child_delivery = delivery_adapter_from_config(config, recipient="child").deliver_child(
+        child_adapter = delivery_adapter_from_config(config, recipient="child")
+        child_delivery = child_adapter.deliver_child(
             DeliveryMessage(text=str(result.get("feedback") or ""), metadata={"kind": "answer_feedback", "session_id": pending.get("id")})
         ).to_dict()
+        if promoted_session:
+            next_child_delivery = child_adapter.deliver_child(
+                DeliveryMessage(
+                    text=str(promoted_session.get("prompt") or ""),
+                    metadata={"kind": "promoted_exercise", "session_id": promoted_session.get("id")},
+                )
+            ).to_dict()
     if notify_parent:
         parent_text = _render_parent_answer_notification(config, pending, answer_text, result)
         parent_delivery = delivery_adapter_from_config(config, recipient="parent").deliver_parent(
@@ -126,7 +136,9 @@ def process_child_telegram_answers(
         "attempts": result.get("attempts"),
         "max_attempts": result.get("max_attempts"),
         "child_delivery": child_delivery,
+        "next_child_delivery": next_child_delivery,
         "parent_delivery": parent_delivery,
+        "promoted_session": promoted_session,
     }
 
 

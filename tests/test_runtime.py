@@ -124,12 +124,14 @@ def test_runtime_opens_exercise_queues_second_and_promotes_after_exhaustion(tmp_
     assert exhausted["attempts"] == 3
     assert exhausted["correct"] is False
     assert "Alle 3 Versuche" in exhausted["feedback"]
+    assert exhausted["promoted_session"]["exercise_id"] == second["id"]
     assert runtime.status()["pending"]["exercise_id"] == second["id"]
     assert runtime.status()["queue"] == []
 
     correct = runtime.submit_answer("A dog")
     assert correct["result"] == "correct"
     assert correct["correct"] is True
+    assert correct["promoted_session"] is None
     assert runtime.status()["pending"] is None
 
 

@@ -54,6 +54,51 @@ def test_telegram_answer_watcher_processes_child_answer_and_notifies(tmp_path, m
     assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 12
 
 
+def test_telegram_answer_watcher_delivers_promoted_queued_exercise_after_correct_answer(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+        parent_telegram_bot_token_env="PARENT_BOT",
+        parent_telegram_chat_id_env="PARENT_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    monkeypatch.setenv("PARENT_BOT", "parent-secret-token")
+    monkeypatch.setenv("PARENT_CHAT", "456")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+    first = runtime.add_exercise({"subject": "math", "prompt": "2 + 2?", "answer": "4"})
+    second = runtime.add_exercise({"subject": "german", "prompt": "Artikel von Haus?", "answer": "das"})
+    opened = runtime.open_exercise(first["id"])
+    queued = runtime.open_exercise(second["id"])
+    assert queued["status"] == "queued"
+    pending_ts = int(datetime.fromisoformat(opened["session"]["timestamp"]).timestamp())
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 30, "message": {"message_id": 1, "date": pending_ts + 1, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "4"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(config, state_file=tmp_path / "watch.json", transport=fake_transport)
+
+    assert result["status"] == "processed"
+    assert result["result"] == "correct"
+    assert runtime.status()["pending"]["exercise_id"] == second["id"]
+    assert runtime.status()["queue"] == []
+    assert result["promoted_session"]["exercise_id"] == second["id"]
+    assert result["next_child_delivery"]["status"] == "dry_run"
+
+
 def test_telegram_answer_watcher_ignores_commands_and_old_messages(tmp_path, monkeypatch):
     data_dir = tmp_path / "runtime"
     config = LearnBuddyConfig(storage_dir=str(data_dir), child_telegram_bot_token_env="CHILD_BOT", child_telegram_chat_id_env="CHILD_CHAT")

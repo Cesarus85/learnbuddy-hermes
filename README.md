@@ -142,7 +142,7 @@ delivery:
       target_env: LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
 ```
 
-`learnbuddy next --deliver` uses the child adapter. `learnbuddy report --notify` uses the parent adapter. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
+`learnbuddy next --deliver` uses the child adapter. `learnbuddy report --notify` uses the parent adapter. `learnbuddy watch-telegram-answers` evaluates one Kids-bot answer, sends feedback, and if a queued exercise is promoted after a correct/exhausted answer, delivers that next prompt to the child automatically. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
 
 For Hermes gateway/plugin use, set profile env defaults so the model can call LearnBuddy tools without repeating local paths:
 

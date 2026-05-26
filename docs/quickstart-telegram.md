@@ -83,6 +83,7 @@ Expected behavior:
 - `doctor` prints variable names only, never secret values.
 - `next --deliver` sends the opened exercise through the child adapter when Telegram is configured.
 - `report --notify` sends a parent summary through the parent adapter when configured.
+- `watch-telegram-answers` evaluates Kids-bot replies; after a correct/exhausted answer it promotes and delivers the next queued exercise automatically.
 - Missing or invalid Telegram configuration returns a safe error/not-configured status rather than leaking credentials.
 
 ## Safety checklist

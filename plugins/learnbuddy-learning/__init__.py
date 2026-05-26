@@ -16,7 +16,7 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.4"
+PLUGIN_VERSION = "0.1.0-alpha.5"
 
 COMMON_PROPERTIES: dict[str, Any] = {
     "config_path": {"type": "string", "description": "Optional LearnBuddy YAML path. Usually omitted; gateway uses LEARNBUDDY_CONFIG_PATH."},
