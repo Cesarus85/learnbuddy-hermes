@@ -127,6 +127,7 @@ def process_child_telegram_answers(
                 answer_text=answer_text,
                 command=child_command,
                 send_feedback=send_feedback,
+                notify_parent=notify_parent,
                 now=now,
             )
         _advance_offset(watch_state_path, watch_state, updates, minimum_next=int(candidate["update_id"]) + 1)
@@ -268,6 +269,10 @@ def _classify_child_control_message(text: str) -> str | None:
         "nächste bitte",
         "neue aufgabe",
         "neue aufgabe bitte",
+        "noch eine aufgabe",
+        "noch eine aufgabe bitte",
+        "noch ne aufgabe",
+        "noch ne aufgabe bitte",
         "weiter",
     }
     if normalized in repeat_phrases:
@@ -325,7 +330,10 @@ def _handle_child_control_message(
             )
         parent_delivery = None
         if notify_parent:
-            parent_delivery = ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_help_request(help_request).to_dict()
+            parent_delivery = _with_metadata(
+                ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_help_request(help_request).to_dict(),
+                {"kind": "parent_help_request", "help_request_id": help_request.get("id"), "session_id": pending.get("id")},
+            )
         return {"command": "help", "help_request": help_request, "child_delivery": child_delivery, "parent_delivery": parent_delivery}
 
     if command == "next":
@@ -352,11 +360,22 @@ def _handle_child_control_message_without_pending(
     answer_text: str,
     command: str,
     send_feedback: bool,
+    notify_parent: bool,
     now: str | datetime | None,
 ) -> dict[str, Any]:
     if command == "next":
-        dispatch, child_delivery = _dispatch_child_requested_next_exercise(config, runtime, send_feedback=send_feedback, now=now)
-        return {"command": "next", "dispatch": dispatch, "child_delivery": child_delivery, "parent_delivery": None}
+        dispatch, child_delivery, help_request, parent_delivery = _dispatch_child_requested_next_exercise(
+            config,
+            runtime,
+            answer_text=answer_text,
+            send_feedback=send_feedback,
+            notify_parent=notify_parent,
+            now=now,
+        )
+        result: dict[str, Any] = {"command": "next", "dispatch": dispatch, "child_delivery": child_delivery, "parent_delivery": parent_delivery}
+        if help_request is not None:
+            result["help_request"] = help_request
+        return result
 
     metadata = {"kind": "no_pending_child_command", "command": command}
     text = "Gerade ist keine Aufgabe offen. Wenn du weiter üben möchtest, schreib: Noch eine."
@@ -374,9 +393,11 @@ def _dispatch_child_requested_next_exercise(
     config: LearnBuddyConfig,
     runtime: LearnBuddyRuntime,
     *,
+    answer_text: str,
     send_feedback: bool,
+    notify_parent: bool,
     now: str | datetime | None,
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
     current_time = _parse_policy_datetime(now, config.timezone)
     if not _inside_allowed_hours(current_time, config.allowed_hours_from, config.allowed_hours_to):
         dispatch = {
@@ -384,17 +405,22 @@ def _dispatch_child_requested_next_exercise(
             "now": current_time.isoformat(),
             "allowed_hours": {"from": config.allowed_hours_from, "to": config.allowed_hours_to},
         }
-        return dispatch, _deliver_child_next_rejection(config, dispatch, "Jetzt ist gerade Lernpause. Frag deine Eltern, wenn du trotzdem üben möchtest.", send_feedback)
+        child_delivery = _deliver_child_next_rejection(config, dispatch, "Jetzt ist gerade Lernpause. Frag deine Eltern, wenn du trotzdem üben möchtest.", send_feedback)
+        help_request, parent_delivery = _notify_parent_about_child_next_block(config, runtime, answer_text, dispatch, notify_parent=notify_parent)
+        return dispatch, child_delivery, help_request, parent_delivery
 
     state = runtime.status()
     if isinstance(state.get("pending"), dict):
         dispatch = {"status": "pending_exists", "pending": state.get("pending")}
-        return dispatch, _deliver_child_next_rejection(config, dispatch, "Erst diese Aufgabe lösen, dann gibt’s die nächste.", send_feedback)
+        child_delivery = _deliver_child_next_rejection(config, dispatch, "Erst diese Aufgabe lösen, dann gibt’s die nächste.", send_feedback)
+        return dispatch, child_delivery, None, None
 
     auto_count = _auto_sessions_today(runtime, current_time, config.timezone)
     if auto_count >= config.daily_auto_limit:
         dispatch = {"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count}
-        return dispatch, _deliver_child_next_rejection(config, dispatch, "Für heute reicht’s erstmal. Frag deine Eltern, wenn du noch mehr üben möchtest.", send_feedback)
+        child_delivery = _deliver_child_next_rejection(config, dispatch, "Für heute reicht’s erstmal. Frag deine Eltern, wenn du noch mehr üben möchtest.", send_feedback)
+        help_request, parent_delivery = _notify_parent_about_child_next_block(config, runtime, answer_text, dispatch, notify_parent=notify_parent)
+        return dispatch, child_delivery, help_request, parent_delivery
 
     try:
         result = runtime.open_exercise(
@@ -404,11 +430,15 @@ def _dispatch_child_requested_next_exercise(
         )
     except KeyError as exc:
         dispatch = {"status": "no_matching_exercise", "error": str(exc)}
-        return dispatch, _deliver_child_next_rejection(config, dispatch, "Ich habe gerade keine passende Aufgabe. Frag deine Eltern nach einer neuen Aufgabe.", send_feedback)
+        child_delivery = _deliver_child_next_rejection(config, dispatch, "Ich habe gerade keine passende Aufgabe. Ich habe deinen Eltern Bescheid gesagt.", send_feedback)
+        help_request, parent_delivery = _notify_parent_about_child_next_block(config, runtime, answer_text, dispatch, notify_parent=notify_parent)
+        return dispatch, child_delivery, help_request, parent_delivery
 
     if result.get("status") != "opened":
         dispatch = dict(result)
-        return dispatch, _deliver_child_next_rejection(config, dispatch, "Ich kann gerade keine neue Aufgabe öffnen. Frag deine Eltern kurz nach Hilfe.", send_feedback)
+        child_delivery = _deliver_child_next_rejection(config, dispatch, "Ich kann gerade keine neue Aufgabe öffnen. Ich habe deinen Eltern kurz Bescheid gesagt.", send_feedback)
+        help_request, parent_delivery = _notify_parent_about_child_next_block(config, runtime, answer_text, dispatch, notify_parent=notify_parent)
+        return dispatch, child_delivery, help_request, parent_delivery
 
     session = result.get("session") if isinstance(result.get("session"), dict) else {}
     metadata = {"kind": "child_requested_next_exercise", "session_id": session.get("id")}
@@ -426,7 +456,30 @@ def _dispatch_child_requested_next_exercise(
             dispatch["delivery"] = child_delivery
             dispatch["delivery_status"] = child_delivery.get("status")
             dispatch["session"] = updated_session or session
-    return dispatch, child_delivery
+    return dispatch, child_delivery, None, None
+
+
+def _notify_parent_about_child_next_block(
+    config: LearnBuddyConfig,
+    runtime: LearnBuddyRuntime,
+    answer_text: str,
+    dispatch: dict[str, Any],
+    *,
+    notify_parent: bool,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Create and optionally deliver a parent-facing note when a child asks for more but policy/storage blocks it."""
+    reason = (
+        f"{config.child_name} bittet per Telegram um eine weitere Aufgabe: {answer_text}. "
+        f"LearnBuddy konnte keine neue Aufgabe öffnen (Grund: {dispatch.get('status')})."
+    )
+    help_request = runtime.create_parent_help_request(reason, subject="general", requested_by="child")
+    parent_delivery = None
+    if notify_parent:
+        parent_delivery = _with_metadata(
+            ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_help_request(help_request).to_dict(),
+            {"kind": "parent_help_request", "help_request_id": help_request.get("id"), "reason": dispatch.get("status")},
+        )
+    return help_request, parent_delivery
 
 
 def _deliver_child_next_rejection(

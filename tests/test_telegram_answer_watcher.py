@@ -311,7 +311,7 @@ def test_telegram_answer_watcher_dispatches_policy_bounded_noch_eine_without_pen
             return {
                 "ok": True,
                 "result": [
-                    {"update_id": 70, "message": {"message_id": 10, "date": 1_779_790_800, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "Noch eine bitte"}},
+                    {"update_id": 70, "message": {"message_id": 10, "date": 1_779_790_800, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "Noch eine Aufgabe"}},
                 ],
             }
         raise AssertionError(url)
@@ -382,6 +382,58 @@ def test_telegram_answer_watcher_rejects_noch_eine_when_daily_limit_is_reached(t
     assert "Für heute reicht" in result["child_delivery"]["text"]
     assert runtime.status()["pending"] is None
     assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 81
+
+
+
+def test_telegram_answer_watcher_notifies_parent_when_child_requests_next_but_no_exercise_exists(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+        parent_telegram_bot_token_env="PARENT_BOT",
+        parent_telegram_chat_id_env="PARENT_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    monkeypatch.setenv("PARENT_BOT", "parent-secret-token")
+    monkeypatch.setenv("PARENT_CHAT", "456")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 90, "message": {"message_id": 12, "date": 1_779_790_800, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "noch eine Aufgabe"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(
+        config,
+        state_file=tmp_path / "watch.json",
+        transport=fake_transport,
+        now="2026-05-26T10:00:00+02:00",
+    )
+
+    assert result["status"] == "child_command"
+    assert result["command"] == "next"
+    assert result["dispatch"]["status"] == "no_matching_exercise"
+    assert result["child_delivery"]["status"] == "dry_run"
+    assert result["child_delivery"]["metadata"]["kind"] == "child_next_rejected"
+    assert result["parent_delivery"]["status"] == "dry_run"
+    assert result["parent_delivery"]["metadata"]["kind"] == "parent_help_request"
+    assert result["help_request"]["requested_by"] == "child"
+    assert result["help_request"]["subject"] == "general"
+    assert "noch eine Aufgabe" in result["help_request"]["reason"]
+    assert len(runtime.help_requests()) == 1
+    assert runtime.status()["pending"] is None
+    assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 91
 
 
 
