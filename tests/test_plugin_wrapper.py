@@ -280,6 +280,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_create_and_send_exercise",
         "learnbuddy_deliver_pending_exercise",
         "learnbuddy_dispatch_plan",
+        "learnbuddy_parent_command_contracts",
         "learnbuddy_submit_answer",
         "learnbuddy_learning_status",
         "learnbuddy_parent_report",
@@ -305,6 +306,11 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert dispatch_schema["additionalProperties"] is False
     assert dispatch_schema["properties"]["subject"]["enum"] == ["math", "german", "english", "general"]
 
+    contracts_schema = ctx.tools["learnbuddy_parent_command_contracts"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_parent_command_contracts"]["toolset"] == "learnbuddy_learning"
+    assert contracts_schema["additionalProperties"] is False
+    assert "Parent command contract" in ctx.tools["learnbuddy_parent_command_contracts"]["schema"]["description"]
+
     answer_schema = ctx.tools["learnbuddy_submit_answer"]["schema"]["parameters"]
     assert answer_schema["required"] == ["answer"]
     assert answer_schema["properties"]["input_mode"]["enum"] == ["text", "audio"]
@@ -324,6 +330,28 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert ctx.tools["learnbuddy_child_request_parent_help"]["toolset"] == "learnbuddy_child"
     assert child_help_schema["required"] == ["reason"]
     assert "notify" not in child_help_schema["properties"]
+
+
+def test_parent_command_contracts_cover_parent_telegram_operations():
+    plugin = load_plugin()
+
+    contracts = json.loads(plugin.learnbuddy_parent_command_contracts({}))
+
+    assert contracts["status"] == "ok"
+    operations = {item["operation"]: item for item in contracts["contracts"]}
+    assert set(operations) == {"status", "report", "resend_pending", "dispatch_plan", "create_and_send_exercise"}
+    assert operations["status"]["tool"] == "learnbuddy_learning_status"
+    assert "Was ist offen?" in operations["status"]["examples"]
+    assert operations["report"]["tool"] == "learnbuddy_parent_report"
+    assert operations["report"]["notify_default"] is False
+    assert operations["resend_pending"]["tool"] == "learnbuddy_deliver_pending_exercise"
+    assert operations["resend_pending"]["args"] == {"force": True}
+    assert operations["dispatch_plan"]["tool"] == "learnbuddy_dispatch_plan"
+    assert operations["dispatch_plan"]["policy_bounded"] is True
+    assert operations["create_and_send_exercise"]["tool"] == "learnbuddy_create_and_send_exercise"
+    assert operations["create_and_send_exercise"]["requires"] == ["prompt", "answer"]
+    assert contracts["safety"]["no_child_toolset"] is True
+    assert contracts["safety"]["no_unbounded_generation"] is True
 
 
 def test_child_profile_aliases_are_narrow_and_parent_help_notifies(tmp_path):

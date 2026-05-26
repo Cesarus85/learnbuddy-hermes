@@ -156,11 +156,12 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, delivers it to the configured child adapter in one bounded call, and stores delivery metadata on the pending session. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic exercise, and `learnbuddy_deliver_pending_exercise` repairs/resends the currently pending prompt if the learner did not receive it. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, repair/resend is explicit, status reads are separate, and pushed parent reports require `notify=true` explicitly.
+The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, delivers it to the configured child adapter in one bounded call, and stores delivery metadata on the pending session. `learnbuddy_parent_command_contracts` publishes the Telegram parent-operation contract for status, report, resend, scheduled dispatch, and create/send routing. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic exercise, and `learnbuddy_deliver_pending_exercise` repairs/resends the currently pending prompt if the learner did not receive it. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, repair/resend is explicit, status reads are separate, and pushed parent reports require `notify=true` explicitly.
 
 ## Docs
 
 - [`docs/quickstart-telegram.md`](docs/quickstart-telegram.md)
+- [`docs/telegram-command-contracts.md`](docs/telegram-command-contracts.md)
 - [`docs/setup-child-profile.md`](docs/setup-child-profile.md)
 - [`docs/quickstart-vps.md`](docs/quickstart-vps.md)
 - [`docs/demo-flow.md`](docs/demo-flow.md)

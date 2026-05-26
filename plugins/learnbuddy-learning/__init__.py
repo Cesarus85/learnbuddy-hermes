@@ -18,7 +18,44 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.7"
+PLUGIN_VERSION = "0.1.0-alpha.8"
+
+PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
+    {
+        "operation": "status",
+        "tool": "learnbuddy_learning_status",
+        "examples": ["Status", "Was ist offen?", "Zeig die Queue", "Hat Learner gerade eine Aufgabe?"],
+        "policy": "Read-only. Use for parent status questions; never sends Telegram messages.",
+    },
+    {
+        "operation": "report",
+        "tool": "learnbuddy_parent_report",
+        "examples": ["Bericht", "Wie lief es heute?", "Schick mir einen Report"],
+        "notify_default": False,
+        "policy": "Default notify=false. Set notify=true only when the parent explicitly asks to send/push the report.",
+    },
+    {
+        "operation": "resend_pending",
+        "tool": "learnbuddy_deliver_pending_exercise",
+        "examples": ["Nochmal senden", "Learner hat die Aufgabe nicht bekommen", "Schick die offene Aufgabe erneut"],
+        "args": {"force": True},
+        "policy": "Only resends the existing pending prompt. Does not create a new exercise or answer for the child.",
+    },
+    {
+        "operation": "dispatch_plan",
+        "tool": "learnbuddy_dispatch_plan",
+        "examples": ["Starte den Lernplan", "Schick eine geplante Aufgabe", "Heute eine Mathe-Aufgabe aus dem Plan"],
+        "policy_bounded": True,
+        "policy": "Respects allowed_hours, daily_auto_limit, and existing pending sessions.",
+    },
+    {
+        "operation": "create_and_send_exercise",
+        "tool": "learnbuddy_create_and_send_exercise",
+        "examples": ["Schick Learner: Was ist 100 + 101?", "Gib Learner eine Matheaufgabe mit Antwort 201"],
+        "requires": ["prompt", "answer"],
+        "policy": "Use only when the parent provides or approves a concrete child-facing prompt and expected answer.",
+    },
+]
 
 COMMON_PROPERTIES: dict[str, Any] = {
     "config_path": {"type": "string", "description": "Optional LearnBuddy YAML path. Usually omitted; gateway uses LEARNBUDDY_CONFIG_PATH."},
@@ -79,6 +116,11 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "subject": {"type": "string", "enum": ["math", "german", "english", "general"]},
             "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
         },
+        "additionalProperties": False,
+    },
+    "learnbuddy_parent_command_contracts": {
+        "type": "object",
+        "properties": COMMON_PROPERTIES,
         "additionalProperties": False,
     },
     "learnbuddy_submit_answer": {
@@ -322,6 +364,22 @@ def learnbuddy_create_and_send_exercise(args: dict[str, Any] | None = None) -> s
     return _json({"status": status, "exercise": exercise, "opened": opened})
 
 
+def learnbuddy_parent_command_contracts(args: dict[str, Any] | None = None) -> str:
+    """Return the supported Parent Telegram command contracts for gateway routing."""
+    _config(dict(args or {}))
+    return _json({
+        "status": "ok",
+        "audience": "parent_telegram",
+        "contracts": PARENT_COMMAND_CONTRACTS,
+        "safety": {
+            "no_child_toolset": True,
+            "no_unbounded_generation": True,
+            "delivery_state_required": True,
+            "notify_requires_explicit_parent_request": True,
+        },
+    })
+
+
 def learnbuddy_submit_answer(args: dict[str, Any] | None = None) -> str:
     """Evaluate an answer for the currently pending exercise."""
     args = dict(args or {})
@@ -388,6 +446,7 @@ TOOLS = [
     ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "learnbuddy_learning", "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer."),
     ("learnbuddy_deliver_pending_exercise", learnbuddy_deliver_pending_exercise, "learnbuddy_learning", "Repair or resend the current pending prompt to the child. Use when a parent reports that the learner did not receive the task."),
     ("learnbuddy_dispatch_plan", learnbuddy_dispatch_plan, "learnbuddy_learning", "Scheduler-safe: open and deliver one due automatic LearnBuddy exercise when allowed-hours and daily-limit policy permit it."),
+    ("learnbuddy_parent_command_contracts", learnbuddy_parent_command_contracts, "learnbuddy_learning", "Parent command contract reference for Telegram routing: status, report, resend pending, dispatch plan, and create/send exercise. Read before improvising ambiguous parent commands."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy pending/queue status."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),

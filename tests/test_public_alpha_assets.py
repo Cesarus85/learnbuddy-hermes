@@ -62,6 +62,22 @@ def test_public_alpha_docs_are_not_stub_placeholders() -> None:
             assert phrase not in text
 
 
+def test_public_docs_include_telegram_parent_command_contracts() -> None:
+    text = read_repo_file("docs/telegram-command-contracts.md")
+    required_snippets = [
+        "Parent Telegram command contracts",
+        "learnbuddy_learning_status",
+        "learnbuddy_parent_report",
+        "learnbuddy_deliver_pending_exercise",
+        "learnbuddy_dispatch_plan",
+        "learnbuddy_create_and_send_exercise",
+        "Web/PWA",
+    ]
+    assert_public_safe_text(text)
+    for snippet in required_snippets:
+        assert snippet in text
+
+
 def test_telegram_quickstart_documents_child_control_messages() -> None:
     text = read_repo_file("docs/quickstart-telegram.md")
     required_snippets = [
