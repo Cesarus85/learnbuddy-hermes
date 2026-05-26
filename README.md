@@ -73,8 +73,11 @@ Not ready yet. Current pre-alpha smoke test:
 ```bash
 python -m pip install -e '.[test]'
 learnbuddy doctor --config examples/single-child-telegram.yaml
+learnbuddy doctor --config examples/single-child-telegram.yaml --format json
 pytest -q
 ```
+
+`learnbuddy doctor` validates the public config, storage path, and delivery environment without printing secret values. Telegram mode reports missing env-var names; `dry_run` mode stays network-free for setup checks.
 
 The public config surface already supports neutral child/agent identity and a transport adapter boundary:
 

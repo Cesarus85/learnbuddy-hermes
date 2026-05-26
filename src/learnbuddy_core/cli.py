@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from .config import LearnBuddyConfig
+from .doctor import build_doctor_report, doctor_exit_code, format_text_report
 
 
 def _config_from_args(args: argparse.Namespace) -> LearnBuddyConfig:
@@ -14,16 +16,12 @@ def _config_from_args(args: argparse.Namespace) -> LearnBuddyConfig:
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
-    storage = config.resolved_storage_dir()
-    print("LearnBuddy doctor")
-    print(f"child_id={config.child_id}")
-    print(f"child_name={config.child_name}")
-    print(f"agent_name={config.agent_name}")
-    print(f"max_attempts={config.max_attempts}")
-    print(f"storage_dir={storage}")
-    print(f"storage_exists={storage.exists()}")
-    print("status=pre-alpha scaffold")
-    return 0
+    report = build_doctor_report(config)
+    if args.format == "json":
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    else:
+        print(format_text_report(report))
+    return doctor_exit_code(report)
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
@@ -37,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     doctor = sub.add_parser("doctor", help="check local LearnBuddy prerequisites")
     doctor.add_argument("--config", help="path to learnbuddy.yaml")
+    doctor.add_argument("--format", choices=["text", "json"], default="text", help="doctor output format")
     doctor.set_defaults(func=cmd_doctor)
     setup = sub.add_parser("setup", help="interactive setup wizard (planned)")
     setup.set_defaults(func=cmd_setup)
