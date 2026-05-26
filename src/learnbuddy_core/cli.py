@@ -136,6 +136,22 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_help_request(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    request = runtime.create_parent_help_request(
+        args.reason,
+        subject=args.subject,
+        target=args.target,
+        urgent=args.urgent,
+        requested_by=args.requested_by,
+    )
+    if args.notify:
+        request["notification"] = ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_help_request(request).to_dict()
+    _print_json({"status": "created", "help_request": request})
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="learnbuddy")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -196,6 +212,16 @@ def build_parser() -> argparse.ArgumentParser:
     _add_runtime_options(report)
     report.add_argument("--notify", action="store_true")
     report.set_defaults(func=cmd_report)
+
+    help_request = sub.add_parser("help-request", help="record a bounded parent-help request")
+    _add_runtime_options(help_request)
+    help_request.add_argument("--reason", required=True)
+    help_request.add_argument("--subject", choices=["math", "german", "english", "general"])
+    help_request.add_argument("--target", choices=["parents", "primary_parent"], default="parents")
+    help_request.add_argument("--requested-by", choices=["child", "parent", "system"], default="child")
+    help_request.add_argument("--urgent", action="store_true")
+    help_request.add_argument("--notify", action="store_true")
+    help_request.set_defaults(func=cmd_help_request)
     return parser
 
 

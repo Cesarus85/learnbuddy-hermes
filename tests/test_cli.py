@@ -184,6 +184,43 @@ delivery:
     assert report["notification"]["target"] == "parent"
 
 
+def test_cli_help_request_records_and_can_notify_parent(capsys, tmp_path):
+    data_dir = tmp_path / "cli-help-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  id: kid-help-cli
+  display_name: Robin
+agent:
+  name: StudyFox
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main([
+        "help-request",
+        "--config", str(config_path),
+        "--subject", "german",
+        "--reason", "Robin braucht Hilfe beim Aufsatz.",
+        "--urgent",
+        "--notify",
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "created"
+    request = result["help_request"]
+    assert request["child_id"] == "kid-help-cli"
+    assert request["subject"] == "german"
+    assert request["urgent"] is True
+    assert request["notification"]["status"] == "dry_run"
+    assert (data_dir / "help_requests.jsonl").exists()
+
+
 def test_cli_setup_creates_public_safe_config_and_storage(capsys, tmp_path):
     config_path = tmp_path / "learnbuddy.yaml"
     data_dir = tmp_path / "learnbuddy-data"
@@ -236,13 +273,15 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
     capsys.readouterr()
     assert main(["answer", "--data-dir", str(data_dir), "7"]) == 0
     capsys.readouterr()
+    assert main(["help-request", "--data-dir", str(data_dir), "--reason", "Need a hint."]) == 0
+    capsys.readouterr()
 
     assert main(["backup", "--data-dir", str(data_dir), "--output", str(archive_path)]) == 0
     backup = json.loads(capsys.readouterr().out)
     assert backup["status"] == "created"
     assert backup["archive_path"] == str(archive_path)
     assert archive_path.exists()
-    assert set(backup["files"]) >= {"answers.jsonl", "exercises.jsonl", "sessions.jsonl", "state.json"}
+    assert set(backup["files"]) >= {"answers.jsonl", "exercises.jsonl", "sessions.jsonl", "state.json", "help_requests.jsonl"}
 
     assert main(["restore", "--archive", str(archive_path), "--data-dir", str(restore_dir)]) == 0
     restore = json.loads(capsys.readouterr().out)

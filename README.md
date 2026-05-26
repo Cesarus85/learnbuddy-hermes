@@ -14,6 +14,7 @@ LearnBuddy is a bounded learning companion that can:
 - limit attempts and give a final explanation when attempts are used up
 - track progress in local JSON/JSONL runtime files
 - render parent-facing summaries
+- record bounded parent-help requests and notify parents only when explicitly requested
 - run network-free in `dry_run` mode or via Telegram adapters
 
 ## What this is not
@@ -94,6 +95,7 @@ learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --a
 learnbuddy next --config ./learnbuddy.yaml --deliver
 learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy status --config ./learnbuddy.yaml
+learnbuddy help-request --config ./learnbuddy.yaml --reason "Learner needs a parent hint." --notify
 learnbuddy report --config ./learnbuddy.yaml --notify
 learnbuddy backup --config ./learnbuddy.yaml --output ./learnbuddy-backup.zip
 learnbuddy restore --archive ./learnbuddy-backup.zip --data-dir ./restored-learnbuddy-data

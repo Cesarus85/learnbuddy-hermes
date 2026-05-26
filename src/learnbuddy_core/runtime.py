@@ -33,6 +33,10 @@ class RuntimePaths:
         return self.data_dir / "answers.jsonl"
 
     @property
+    def help_requests(self) -> Path:
+        return self.data_dir / "help_requests.jsonl"
+
+    @property
     def state(self) -> Path:
         return self.data_dir / "state.json"
 
@@ -205,8 +209,48 @@ class LearnBuddyRuntime:
             "text": text,
         }
 
+    def create_parent_help_request(
+        self,
+        reason: str,
+        *,
+        subject: str | None = None,
+        target: str = "parents",
+        urgent: bool = False,
+        requested_by: str = "child",
+    ) -> dict[str, Any]:
+        """Record a bounded parent-help request without external side effects."""
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            raise ValueError("help request requires reason")
+        clean_subject = str(subject or "").strip() or None
+        row = {
+            "id": f"help-{uuid.uuid4().hex[:12]}",
+            "timestamp": _now(),
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
+            "reason": clean_reason[:800],
+            "subject": clean_subject,
+            "target": str(target or "parents"),
+            "urgent": bool(urgent),
+            "requested_by": str(requested_by or "child"),
+            "status": "open",
+        }
+        row["text"] = self._help_request_text(row)
+        _append_jsonl(self.paths.help_requests, row)
+        return row
+
+    def help_requests(self) -> list[dict[str, Any]]:
+        return _read_jsonl(self.paths.help_requests)
+
     def _profile(self) -> dict[str, str]:
         return {"child_id": self.child_id, "child_name": self.child_name, "agent_name": self.agent_name}
+
+    def _help_request_text(self, request: dict[str, Any]) -> str:
+        subject = request.get("subject")
+        prefix = "Dringende Elternhilfe" if request.get("urgent") else "Elternhilfe"
+        subject_text = f" in {subject}" if subject else ""
+        return f"{self.agent_name}: {prefix} für {self.child_name}{subject_text}: {request.get('reason')}"
 
     def _state(self) -> dict[str, Any]:
         state = _read_json(self.paths.state, {"pending": None, "queue": [], "profile": self._profile()})

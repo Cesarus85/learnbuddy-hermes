@@ -11,7 +11,7 @@ import yaml
 from .config import default_storage_dir
 from .runtime import RuntimePaths
 
-_RUNTIME_FILE_NAMES = ("state.json", "exercises.jsonl", "sessions.jsonl", "answers.jsonl")
+_RUNTIME_FILE_NAMES = ("state.json", "exercises.jsonl", "sessions.jsonl", "answers.jsonl", "help_requests.jsonl")
 _MANIFEST_NAME = "learnbuddy-backup-manifest.json"
 
 

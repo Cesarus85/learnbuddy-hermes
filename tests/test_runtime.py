@@ -156,3 +156,23 @@ def test_runtime_parent_report_uses_synthetic_sessions_and_answers(tmp_path):
     assert "Alex" in report["text"]
     assert "BuddyBot" in report["text"]
     assert "1/4 richtig" in report["text"]
+
+
+def test_runtime_records_parent_help_requests(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_id="kid-help", child_name="Alex", agent_name="BuddyBot")
+
+    request = runtime.create_parent_help_request(
+        "Alex hängt bei Brüchen fest.",
+        subject="math",
+        urgent=True,
+        requested_by="child",
+    )
+
+    assert request["id"].startswith("help-")
+    assert request["child_id"] == "kid-help"
+    assert request["subject"] == "math"
+    assert request["urgent"] is True
+    assert request["status"] == "open"
+    assert "Dringende Elternhilfe" in request["text"]
+    assert "Alex hängt" in request["text"]
+    assert runtime.help_requests() == [request]

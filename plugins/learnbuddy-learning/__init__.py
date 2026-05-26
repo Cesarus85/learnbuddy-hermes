@@ -16,7 +16,7 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.2"
+PLUGIN_VERSION = "0.1.0-alpha.3"
 
 COMMON_PROPERTIES: dict[str, Any] = {
     "config_path": {"type": "string", "description": "Optional LearnBuddy YAML path. Usually omitted; gateway uses LEARNBUDDY_CONFIG_PATH."},
@@ -82,6 +82,20 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             **COMMON_PROPERTIES,
             "notify": {"type": "boolean", "default": False, "description": "Send the report to the configured parent adapter when true."},
         },
+        "additionalProperties": False,
+    },
+    "learnbuddy_parent_help_request": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "reason": {"type": "string", "description": "Short parent-facing reason why the learner needs help."},
+            "subject": {"type": "string", "enum": ["math", "german", "english", "general"]},
+            "target": {"type": "string", "enum": ["parents", "primary_parent"], "default": "parents"},
+            "urgent": {"type": "boolean", "default": False},
+            "requested_by": {"type": "string", "enum": ["child", "parent", "system"], "default": "child"},
+            "notify": {"type": "boolean", "default": False, "description": "Send the help request to the configured parent adapter when true."},
+        },
+        "required": ["reason"],
         "additionalProperties": False,
     },
 }
@@ -218,6 +232,23 @@ def learnbuddy_parent_report(args: dict[str, Any] | None = None) -> str:
     return _json(report)
 
 
+def learnbuddy_parent_help_request(args: dict[str, Any] | None = None) -> str:
+    """Record a bounded request for parent help; notify only when requested."""
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    request = runtime.create_parent_help_request(
+        args.get("reason", ""),
+        subject=args.get("subject"),
+        target=args.get("target", "parents"),
+        urgent=bool(args.get("urgent", False)),
+        requested_by=args.get("requested_by", "child"),
+    )
+    if args.get("notify"):
+        request["notification"] = ParentNotifier(_delivery_adapter(config, recipient="parent")).notify_help_request(request).to_dict()
+    return _json({"status": "created", "help_request": request})
+
+
 TOOLS = [
     ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "Create a bounded LearnBuddy exercise for later use. Parent UX: use this only when the parent explicitly asks to queue, not send."),
     ("learnbuddy_next_exercise", learnbuddy_next_exercise, "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
@@ -225,6 +256,7 @@ TOOLS = [
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "Submit an answer for the currently pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "Show LearnBuddy pending/queue status."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
+    ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
 ]
 
 

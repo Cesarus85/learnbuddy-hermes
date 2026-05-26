@@ -23,6 +23,7 @@ No private child data, chat IDs, raw answers, parent names, or production creden
 | Manual parent-created exercises | `learnbuddy_core.parent_queue` |
 | Child delivery over Telegram | Delivery adapter interface plus Telegram adapter |
 | Parent notifications | Parent notifier interface plus configurable adapters |
+| Parent-help escalation | Public-safe help-request store plus optional parent notification |
 | Daily learning status | Report renderer independent from transport |
 | Scheduled plan dispatcher | Scheduler-friendly plan dispatch service |
 | Dashboard intent mailbox | Optional web/dashboard integration layer |
@@ -106,7 +107,7 @@ Phase 3 doctor/CLI slice adds:
 - `learnbuddy_core.doctor.build_doctor_report(...)`
 - text and JSON `learnbuddy doctor` output
 - storage and delivery environment checks that report env-var names only, not values
-- JSON runtime commands: `learnbuddy queue`, `next`, `answer`, `status`, and `report`
+- JSON runtime commands: `learnbuddy queue`, `next`, `answer`, `status`, `help-request`, and `report`
 - public-safe `learnbuddy setup` that creates a starter config and local storage without secrets
 - zip-based `learnbuddy backup` and `learnbuddy restore` for runtime data files only
 

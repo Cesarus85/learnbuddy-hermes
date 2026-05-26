@@ -243,6 +243,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_submit_answer",
         "learnbuddy_learning_status",
         "learnbuddy_parent_report",
+        "learnbuddy_parent_help_request",
     }
     create_schema = ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["parameters"]
     assert ctx.tools["learnbuddy_create_and_send_exercise"]["toolset"] == "learnbuddy_learning"
@@ -258,6 +259,54 @@ def test_registered_tools_expose_guided_parent_command_schemas():
 
     report_schema = ctx.tools["learnbuddy_parent_report"]["schema"]["parameters"]
     assert report_schema["properties"]["notify"]["default"] is False
+
+    help_schema = ctx.tools["learnbuddy_parent_help_request"]["schema"]["parameters"]
+    assert help_schema["required"] == ["reason"]
+    assert help_schema["additionalProperties"] is False
+    assert help_schema["properties"]["notify"]["default"] is False
+    assert "external/non-learning" in ctx.tools["learnbuddy_parent_help_request"]["schema"]["description"]
+
+
+def test_parent_help_request_can_dry_run_notify_parent(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "parent-help-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  id: kid-help
+  display_name: Alex
+agent:
+  name: BuddyBot
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = json.loads(plugin.learnbuddy_parent_help_request({
+        "config_path": str(config_path),
+        "subject": "math",
+        "reason": "Alex hängt bei Brüchen fest.",
+        "urgent": True,
+        "notify": True,
+    }))
+
+    assert result["status"] == "created"
+    request = result["help_request"]
+    assert request["child_id"] == "kid-help"
+    assert request["child_name"] == "Alex"
+    assert request["agent_name"] == "BuddyBot"
+    assert request["subject"] == "math"
+    assert request["notification"] == {
+        "status": "dry_run",
+        "adapter": "dry_run",
+        "target": "parent",
+        "message_id": None,
+        "error": None,
+    }
 
 
 def test_parent_report_can_dry_run_notify_parent(tmp_path):
