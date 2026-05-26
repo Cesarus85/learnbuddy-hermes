@@ -101,11 +101,12 @@ Implemented in the first public runtime slice:
 - plugin wrapper tools in `plugins/learnbuddy-learning/__init__.py`
 - synthetic tests in `tests/test_runtime.py` and `tests/test_plugin_wrapper.py`
 
-Phase 3 doctor slice adds:
+Phase 3 doctor/CLI slice adds:
 
 - `learnbuddy_core.doctor.build_doctor_report(...)`
 - text and JSON `learnbuddy doctor` output
 - storage and delivery environment checks that report env-var names only, not values
+- JSON runtime commands: `learnbuddy queue`, `next`, `answer`, `status`, and `report`
 
 If this cannot run against synthetic data, it is not ready to touch real family workflows. Tiny hammer, big nail.
 

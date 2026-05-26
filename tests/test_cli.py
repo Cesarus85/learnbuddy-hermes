@@ -93,3 +93,92 @@ def test_doctor_accepts_creatable_storage_path(capsys, tmp_path, monkeypatch):
     assert "overall=ok" in out
     assert f"storage_dir={hermes_home / 'family' / 'learnbuddy'}" in out
     assert "creatable=True" in out
+
+
+def test_cli_exercise_lifecycle_uses_configured_storage(capsys, tmp_path):
+    data_dir = tmp_path / "cli-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  id: kid-cli
+  display_name: Robin
+agent:
+  name: StudyFox
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main(["queue", "--config", str(config_path), "--subject", "math", "--prompt", "2 + 2?", "--answer", "4"]) == 0
+    queued = json.loads(capsys.readouterr().out)
+    assert queued["status"] == "created"
+    exercise_id = queued["exercise"]["id"]
+
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
+    opened = json.loads(capsys.readouterr().out)
+    assert opened["status"] == "opened"
+    assert opened["session"]["child_id"] == "kid-cli"
+    assert opened["prompt"] == "2 + 2?"
+
+    assert main(["answer", "--config", str(config_path), "4"]) == 0
+    answer = json.loads(capsys.readouterr().out)
+    assert answer["result"] == "correct"
+
+    assert main(["status", "--config", str(config_path)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["pending"] is None
+
+    assert main(["report", "--config", str(config_path)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["child_id"] == "kid-cli"
+    assert report["correct"] == 1
+
+
+def test_cli_next_exercise_can_dry_run_deliver(capsys, tmp_path):
+    data_dir = tmp_path / "cli-delivery-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["queue", "--config", str(config_path), "--prompt", "Translate: cat", "--answer", "Katze"]) == 0
+    exercise_id = json.loads(capsys.readouterr().out)["exercise"]["id"]
+
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id, "--deliver"]) == 0
+    opened = json.loads(capsys.readouterr().out)
+
+    assert opened["delivery"] == {
+        "status": "dry_run",
+        "adapter": "dry_run",
+        "target": "child",
+        "message_id": None,
+        "error": None,
+    }
+
+
+def test_cli_report_can_dry_run_notify_parent(capsys, tmp_path):
+    data_dir = tmp_path / "cli-notify-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["report", "--config", str(config_path), "--notify"]) == 0
+    report = json.loads(capsys.readouterr().out)
+
+    assert report["notification"]["status"] == "dry_run"
+    assert report["notification"]["target"] == "parent"

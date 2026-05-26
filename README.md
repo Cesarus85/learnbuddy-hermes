@@ -74,10 +74,15 @@ Not ready yet. Current pre-alpha smoke test:
 python -m pip install -e '.[test]'
 learnbuddy doctor --config examples/single-child-telegram.yaml
 learnbuddy doctor --config examples/single-child-telegram.yaml --format json
+learnbuddy queue --config examples/single-child-telegram.yaml --subject math --prompt "2 + 2?" --answer "4"
+learnbuddy next --config examples/single-child-telegram.yaml --deliver
+learnbuddy answer --config examples/single-child-telegram.yaml "4"
+learnbuddy status --config examples/single-child-telegram.yaml
+learnbuddy report --config examples/single-child-telegram.yaml --notify
 pytest -q
 ```
 
-`learnbuddy doctor` validates the public config, storage path, and delivery environment without printing secret values. Telegram mode reports missing env-var names; `dry_run` mode stays network-free for setup checks.
+`learnbuddy doctor` validates the public config, storage path, and delivery environment without printing secret values. Telegram mode reports missing env-var names; `dry_run` mode stays network-free for setup checks. Runtime CLI commands (`queue`, `next`, `answer`, `status`, `report`) return JSON and use the same local state machine as the plugin wrapper.
 
 The public config surface already supports neutral child/agent identity and a transport adapter boundary:
 
