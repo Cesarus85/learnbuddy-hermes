@@ -123,10 +123,21 @@ Default profile example:
 ```bash
 mkdir -p ~/.hermes/plugins/learnbuddy-learning
 rsync -a --delete plugins/learnbuddy-learning/ ~/.hermes/plugins/learnbuddy-learning/
+python -m pip install -e .
 hermes plugins list
 hermes plugins enable learnbuddy-learning || true
+hermes config set platform_toolsets.telegram '["hermes-telegram","learnbuddy_learning"]'
 hermes plugins list
 ```
+
+For unattended gateway use, set defaults in the profile environment instead of relying on the model to pass paths on every tool call:
+
+```text
+LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
+LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
+```
+
+`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter.
 
 A child-facing profile should be created separately and locked down. Do not clone a parent/admin profile wholesale.
 

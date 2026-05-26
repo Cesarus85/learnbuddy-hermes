@@ -6,6 +6,7 @@ plugins must not be copied into this repository.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +16,37 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.0"
+PLUGIN_VERSION = "0.1.0-alpha.1"
+
+
+def _load_env_file(args: dict[str, Any] | None = None) -> None:
+    """Load optional LearnBuddy env vars before delivery/config operations.
+
+    Existing process environment values win. The file is line-based KEY=VALUE,
+    intentionally tiny so deployments do not need python-dotenv.
+    """
+    args = args or {}
+    env_path = args.get("env_file") or os.getenv("LEARNBUDDY_ENV_FILE")
+    if not env_path:
+        return
+    path = Path(str(env_path)).expanduser()
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
 
 
 def _config(args: dict[str, Any] | None = None) -> LearnBuddyConfig:
     args = args or {}
-    return LearnBuddyConfig.from_yaml(args["config_path"]) if args.get("config_path") else LearnBuddyConfig()
+    _load_env_file(args)
+    config_path = args.get("config_path") or os.getenv("LEARNBUDDY_CONFIG_PATH")
+    return LearnBuddyConfig.from_yaml(config_path) if config_path else LearnBuddyConfig()
 
 
 def _runtime(args: dict[str, Any] | None = None) -> LearnBuddyRuntime:
@@ -87,6 +113,19 @@ def learnbuddy_next_exercise(args: dict[str, Any] | None = None) -> str:
     return _json(result)
 
 
+def learnbuddy_create_and_send_exercise(args: dict[str, Any] | None = None) -> str:
+    """Create an exercise, open it immediately, and deliver it to the child adapter."""
+    args = dict(args or {})
+    queued = json.loads(learnbuddy_queue_exercise(args))
+    exercise = queued["exercise"]
+    next_args = dict(args)
+    next_args["exercise_id"] = exercise["id"]
+    next_args["deliver"] = args.get("deliver", True)
+    opened = json.loads(learnbuddy_next_exercise(next_args))
+    status = "sent" if opened.get("delivery", {}).get("status") in {"sent", "dry_run"} else opened.get("status", "created")
+    return _json({"status": status, "exercise": exercise, "opened": opened})
+
+
 def learnbuddy_submit_answer(args: dict[str, Any] | None = None) -> str:
     """Evaluate an answer for the currently pending exercise."""
     args = dict(args or {})
@@ -114,6 +153,7 @@ def learnbuddy_parent_report(args: dict[str, Any] | None = None) -> str:
 TOOLS = [
     ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "Create a bounded LearnBuddy exercise."),
     ("learnbuddy_next_exercise", learnbuddy_next_exercise, "Open or queue the next LearnBuddy exercise."),
+    ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "Create a LearnBuddy exercise, open it, and deliver it to the child."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "Submit an answer for the pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "Show LearnBuddy pending/queue status."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "Summarize LearnBuddy progress for a parent."),

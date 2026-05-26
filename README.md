@@ -139,6 +139,15 @@ delivery:
 
 `learnbuddy next --deliver` uses the child adapter. `learnbuddy report --notify` uses the parent adapter. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
 
+For Hermes gateway/plugin use, set profile env defaults so the model can call LearnBuddy tools without repeating local paths:
+
+```text
+LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
+LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
+```
+
+The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, and delivers it to the configured child adapter in one bounded call.
+
 ## Docs
 
 - [`docs/quickstart-telegram.md`](docs/quickstart-telegram.md)
