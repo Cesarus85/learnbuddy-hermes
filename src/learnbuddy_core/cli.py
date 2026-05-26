@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, time
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 from .config import LearnBuddyConfig
 from .delivery import DeliveryMessage, delivery_adapter_from_config
 from .doctor import build_doctor_report, doctor_exit_code, format_text_report
@@ -39,6 +41,41 @@ def _print_json(data: Any) -> None:
 
 def _delivery_succeeded(status: Any) -> bool:
     return str(status or "") in {"sent", "dry_run"}
+
+
+def _parse_datetime(value: str | None, timezone_name: str) -> datetime:
+    zone = ZoneInfo(timezone_name)
+    if value:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(zone)
+    return datetime.now(zone)
+
+
+def _parse_clock(value: str) -> time:
+    return time.fromisoformat(value)
+
+
+def _inside_allowed_hours(now: datetime, start_text: str, end_text: str) -> bool:
+    current = now.time().replace(second=0, microsecond=0)
+    start = _parse_clock(start_text)
+    end = _parse_clock(end_text)
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
+
+
+def _auto_sessions_today(runtime: LearnBuddyRuntime, now: datetime, timezone_name: str) -> int:
+    zone = ZoneInfo(timezone_name)
+    count = 0
+    for session in runtime.sessions():
+        if session.get("mode") != "auto":
+            continue
+        timestamp = session.get("timestamp")
+        if not timestamp:
+            continue
+        session_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")).astimezone(zone)
+        if session_time.date() == now.date():
+            count += 1
+    return count
 
 
 def _deliver_pending_child_prompt(config: LearnBuddyConfig, runtime: LearnBuddyRuntime, *, force: bool = False) -> dict[str, Any]:
@@ -147,6 +184,45 @@ def cmd_deliver_pending(args: argparse.Namespace) -> int:
     return 0 if result.get("status") in {"sent", "already_sent"} else 1
 
 
+def cmd_dispatch_plan(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    now = _parse_datetime(args.now, config.timezone)
+    if not _inside_allowed_hours(now, config.allowed_hours_from, config.allowed_hours_to):
+        _print_json({
+            "status": "outside_allowed_hours",
+            "now": now.isoformat(),
+            "allowed_hours": {"from": config.allowed_hours_from, "to": config.allowed_hours_to},
+        })
+        return 0
+    state = runtime.status()
+    if isinstance(state.get("pending"), dict):
+        _print_json({"status": "pending_exists", "pending": state.get("pending")})
+        return 0
+    auto_count = _auto_sessions_today(runtime, now, config.timezone)
+    if auto_count >= config.daily_auto_limit:
+        _print_json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
+        return 0
+    try:
+        result = runtime.open_exercise(
+            args.exercise_id,
+            subject=args.subject,
+            mode="auto",
+            requested_by="system",
+            timestamp=now.astimezone(ZoneInfo("UTC")).isoformat(),
+        )
+    except KeyError as exc:
+        _print_json({"status": "no_matching_exercise", "error": str(exc)})
+        return 0
+    if result.get("status") == "opened":
+        delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
+        result["delivery"] = delivery_result.get("delivery")
+        result["delivery_status"] = delivery_result.get("status")
+        result["session"] = delivery_result.get("session") or result.get("session")
+    _print_json(result)
+    return 0
+
+
 def cmd_answer(args: argparse.Namespace) -> int:
     runtime = _runtime_from_args(args)
     _print_json(runtime.submit_answer(args.answer, input_mode=args.input_mode))
@@ -248,6 +324,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_runtime_options(deliver_pending)
     deliver_pending.add_argument("--force", action="store_true", help="send again even if the pending exercise is already marked delivered")
     deliver_pending.set_defaults(func=cmd_deliver_pending)
+
+    dispatch_plan = sub.add_parser("dispatch-plan", help="open and deliver one due automatic exercise when schedule policy allows it")
+    _add_runtime_options(dispatch_plan)
+    dispatch_plan.add_argument("--exercise-id")
+    dispatch_plan.add_argument("--subject")
+    dispatch_plan.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
+    dispatch_plan.set_defaults(func=cmd_dispatch_plan)
 
     answer = sub.add_parser("answer", help="submit an answer for the pending exercise")
     _add_runtime_options(answer)

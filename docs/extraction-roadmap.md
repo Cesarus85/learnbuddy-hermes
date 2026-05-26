@@ -107,7 +107,8 @@ Phase 3 doctor/CLI slice adds:
 - `learnbuddy_core.doctor.build_doctor_report(...)`
 - text and JSON `learnbuddy doctor` output
 - storage and delivery environment checks that report env-var names only, not values
-- JSON runtime commands: `learnbuddy queue`, `next`, `deliver-pending`, `answer`, `status`, `help-request`, `watch-telegram-answers`, and `report`
+- JSON runtime commands: `learnbuddy queue`, `next`, `dispatch-plan`, `deliver-pending`, `answer`, `status`, `help-request`, `watch-telegram-answers`, and `report`
+- scheduled plan dispatcher parity: `dispatch-plan` respects `daily_auto_limit`, `allowed_hours`, and existing pending work before opening/delivering one automatic exercise
 - delivery-state parity: pending sessions record child delivery status/message metadata; the watcher and `deliver-pending` repair undelivered pending prompts before expecting child answers
 - Hermes plugin role split: broad parent/admin `learnbuddy_learning` toolset plus narrow child-facing `learnbuddy_child` aliases
 - public-safe `learnbuddy setup` that creates a starter config and local storage without secrets

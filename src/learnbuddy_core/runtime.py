@@ -137,6 +137,9 @@ class LearnBuddyRuntime:
     def exercises(self) -> list[dict[str, Any]]:
         return _read_jsonl(self.paths.exercises)
 
+    def sessions(self) -> list[dict[str, Any]]:
+        return _read_jsonl(self.paths.sessions)
+
     def status(self) -> dict[str, Any]:
         return self._state()
 
@@ -168,10 +171,18 @@ class LearnBuddyRuntime:
         self._write_state(state)
         return pending
 
-    def open_exercise(self, exercise_id: str | None = None, *, subject: str | None = None, mode: str = "manual", requested_by: str = "parent") -> dict[str, Any]:
+    def open_exercise(
+        self,
+        exercise_id: str | None = None,
+        *,
+        subject: str | None = None,
+        mode: str = "manual",
+        requested_by: str = "parent",
+        timestamp: str | None = None,
+    ) -> dict[str, Any]:
         exercise = self._choose_exercise(exercise_id=exercise_id, subject=subject)
         state = self._state()
-        session = self._make_session(exercise, mode=mode, requested_by=requested_by)
+        session = self._make_session(exercise, mode=mode, requested_by=requested_by, timestamp=timestamp)
         if state.get("pending"):
             queue_item = dict(session)
             queue_item["queued_at"] = _now()
@@ -333,7 +344,7 @@ class LearnBuddyRuntime:
     def _exercise_by_id(self, exercise_id: str) -> dict[str, Any]:
         return self._choose_exercise(exercise_id=exercise_id)
 
-    def _make_session(self, exercise: dict[str, Any], *, mode: str, requested_by: str) -> dict[str, Any]:
+    def _make_session(self, exercise: dict[str, Any], *, mode: str, requested_by: str, timestamp: str | None = None) -> dict[str, Any]:
         return {
             "id": f"sess-{uuid.uuid4().hex[:12]}",
             "exercise_id": exercise["id"],
@@ -347,7 +358,7 @@ class LearnBuddyRuntime:
             "delivery": _fresh_delivery_state(),
             "mode": mode,
             "requested_by": requested_by,
-            "timestamp": _now(),
+            "timestamp": timestamp or _now(),
         }
 
     def _promote_next(self, state: dict[str, Any]) -> dict[str, Any] | None:

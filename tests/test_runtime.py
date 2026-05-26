@@ -23,6 +23,10 @@ agent:
   name: BuddyBot
 safety:
   max_attempts: 4
+  daily_auto_limit: 2
+  allowed_hours:
+    from: "08:30"
+    to: "19:45"
 storage:
   data_dir: ./learnbuddy-data
 """.strip(),
@@ -35,6 +39,9 @@ storage:
     assert config.child_name == "Alex"
     assert config.agent_name == "BuddyBot"
     assert config.max_attempts == 4
+    assert config.daily_auto_limit == 2
+    assert config.allowed_hours_from == "08:30"
+    assert config.allowed_hours_to == "19:45"
     assert config.storage_dir.endswith("learnbuddy-data")
 
 

@@ -173,6 +173,44 @@ delivery:
     }
 
 
+def test_dispatch_plan_opens_and_delivers_scheduled_exercise(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "dispatch-plan-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+safety:
+  daily_auto_limit: 1
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "6 + 7?",
+        "answer": "13",
+    }))
+
+    result = json.loads(plugin.learnbuddy_dispatch_plan({
+        "config_path": str(config_path),
+        "exercise_id": queued["exercise"]["id"],
+        "now": "2026-05-26T10:00:00+02:00",
+    }))
+
+    assert result["status"] == "opened"
+    assert result["delivery_status"] == "sent"
+    assert result["delivery"]["status"] == "dry_run"
+    assert result["session"]["mode"] == "auto"
+    assert result["session"]["requested_by"] == "system"
+
+
 def test_plugin_loads_default_env_file_before_delivery(tmp_path, monkeypatch):
     plugin = load_plugin()
     data_dir = tmp_path / "env-file-data"
@@ -241,6 +279,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_next_exercise",
         "learnbuddy_create_and_send_exercise",
         "learnbuddy_deliver_pending_exercise",
+        "learnbuddy_dispatch_plan",
         "learnbuddy_submit_answer",
         "learnbuddy_learning_status",
         "learnbuddy_parent_report",
@@ -260,6 +299,11 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert ctx.tools["learnbuddy_deliver_pending_exercise"]["toolset"] == "learnbuddy_learning"
     assert repair_schema["additionalProperties"] is False
     assert repair_schema["properties"]["force"]["default"] is False
+
+    dispatch_schema = ctx.tools["learnbuddy_dispatch_plan"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_dispatch_plan"]["toolset"] == "learnbuddy_learning"
+    assert dispatch_schema["additionalProperties"] is False
+    assert dispatch_schema["properties"]["subject"]["enum"] == ["math", "german", "english", "general"]
 
     answer_schema = ctx.tools["learnbuddy_submit_answer"]["schema"]["parameters"]
     assert answer_schema["required"] == ["answer"]

@@ -73,7 +73,7 @@ delivery:
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
-learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
 learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy report --config ./learnbuddy.yaml --notify
@@ -82,7 +82,8 @@ learnbuddy report --config ./learnbuddy.yaml --notify
 Expected behavior:
 
 - `doctor` prints variable names only, never secret values.
-- `next --deliver` sends the opened exercise through the child adapter when Telegram is configured and records delivery metadata on the pending session.
+- `dispatch-plan` opens and sends one automatic exercise only when policy allows it (`daily_auto_limit`, `allowed_hours`, no current pending item).
+- `next --deliver` remains the manual parent-open path and records delivery metadata on the pending session.
 - `deliver-pending` repairs/resends the current pending prompt if the learner never saw it.
 - `report --notify` sends a parent summary through the parent adapter when configured.
 - `watch-telegram-answers` evaluates Kids-bot replies; when there is no answer it repairs any undelivered pending prompt, and after a correct/exhausted answer it promotes and delivers the next queued exercise automatically.

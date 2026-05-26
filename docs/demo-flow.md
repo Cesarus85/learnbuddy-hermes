@@ -7,7 +7,7 @@ This is a complete public-alpha smoke path using synthetic data only. It is safe
 Prove the full lifecycle:
 
 ```text
-setup -> doctor -> queue -> next --deliver -> deliver-pending -> answer -> status -> report --notify -> backup -> restore
+setup -> doctor -> queue -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> report --notify -> backup -> restore
 ```
 
 No Telegram token, chat ID, production child data, or private deployment path is needed.
@@ -70,14 +70,16 @@ The command returns JSON with an exercise id.
 
 ## 5. Open, dry-run deliver, and repair-send if needed
 
-This is the `learnbuddy next --deliver` step of the demo lifecycle. `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful `next --deliver`.
+This is the scheduled/automatic dispatch part of the demo lifecycle. `dispatch-plan` opens and delivers one automatic exercise only when policy allows it (`daily_auto_limit`, `allowed_hours`, no current pending item). `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful delivery.
 
 ```bash
-learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
 learnbuddy deliver-pending --config ./learnbuddy.yaml
+# Manual parent-open path still exists: learnbuddy next --deliver
+# learnbuddy next --config ./learnbuddy.yaml --deliver
 ```
 
-Expected result: one pending exercise opens, the delivery result has `status` set to `dry_run`, and the pending session records child-delivery metadata.
+Expected result: one pending automatic exercise opens during allowed hours, the delivery result has `status` set to `dry_run`, and the pending session records child-delivery metadata.
 
 ## 6. Submit an answer
 

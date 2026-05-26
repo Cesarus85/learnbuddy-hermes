@@ -17,6 +17,9 @@ class LearnBuddyConfig:
     timezone: str = "Europe/Berlin"
     storage_dir: str | None = None
     max_attempts: int = 3
+    daily_auto_limit: int = 1
+    allowed_hours_from: str = "07:00"
+    allowed_hours_to: str = "21:00"
     delivery_mode: str = "dry_run"
     child_telegram_bot_token_env: str = "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN"
     child_telegram_chat_id_env: str = "LEARNBUDDY_ALLOWED_CHILD_CHAT_ID"
@@ -38,6 +41,7 @@ class LearnBuddyConfig:
         agent = data.get("agent")
         agent_map = _mapping(agent)
         safety = _mapping(data.get("safety"))
+        allowed_hours = _mapping(safety.get("allowed_hours"))
         storage = _mapping(data.get("storage"))
         delivery = _mapping(data.get("delivery"))
         telegram = _mapping(delivery.get("telegram"))
@@ -66,6 +70,9 @@ class LearnBuddyConfig:
             timezone=str(family.get("timezone") or safety.get("timezone") or data.get("timezone") or cls.timezone),
             storage_dir=storage_dir,
             max_attempts=int(safety.get("max_attempts") or child.get("max_attempts") or data.get("max_attempts") or cls.max_attempts),
+            daily_auto_limit=int(safety.get("daily_auto_limit") or data.get("daily_auto_limit") or cls.daily_auto_limit),
+            allowed_hours_from=str(allowed_hours.get("from") or safety.get("allowed_hours_from") or cls.allowed_hours_from),
+            allowed_hours_to=str(allowed_hours.get("to") or safety.get("allowed_hours_to") or cls.allowed_hours_to),
             delivery_mode=str(delivery.get("mode") or child_delivery_type or cls.delivery_mode),
             child_telegram_bot_token_env=str(
                 telegram.get("child_bot_env")

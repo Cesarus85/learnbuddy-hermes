@@ -9,14 +9,16 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from learnbuddy_core.cli import _auto_sessions_today, _inside_allowed_hours, _parse_datetime
 from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
 from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.6"
+PLUGIN_VERSION = "0.1.0-alpha.7"
 
 COMMON_PROPERTIES: dict[str, Any] = {
     "config_path": {"type": "string", "description": "Optional LearnBuddy YAML path. Usually omitted; gateway uses LEARNBUDDY_CONFIG_PATH."},
@@ -66,6 +68,16 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             **COMMON_PROPERTIES,
             "force": {"type": "boolean", "default": False, "description": "Send again even when the pending exercise is already marked delivered."},
+        },
+        "additionalProperties": False,
+    },
+    "learnbuddy_dispatch_plan": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "exercise_id": {"type": "string", "description": "Specific exercise id to dispatch; omit to pick the next matching subject."},
+            "subject": {"type": "string", "enum": ["math", "german", "english", "general"]},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
         },
         "additionalProperties": False,
     },
@@ -261,6 +273,42 @@ def learnbuddy_deliver_pending_exercise(args: dict[str, Any] | None = None) -> s
     return _json(_deliver_pending_child_prompt(config, runtime, force=bool(args.get("force", False))))
 
 
+def learnbuddy_dispatch_plan(args: dict[str, Any] | None = None) -> str:
+    """Open and deliver one automatic exercise when schedule policy allows it."""
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    now = _parse_datetime(args.get("now"), config.timezone)
+    if not _inside_allowed_hours(now, config.allowed_hours_from, config.allowed_hours_to):
+        return _json({
+            "status": "outside_allowed_hours",
+            "now": now.isoformat(),
+            "allowed_hours": {"from": config.allowed_hours_from, "to": config.allowed_hours_to},
+        })
+    state = runtime.status()
+    if isinstance(state.get("pending"), dict):
+        return _json({"status": "pending_exists", "pending": state.get("pending")})
+    auto_count = _auto_sessions_today(runtime, now, config.timezone)
+    if auto_count >= config.daily_auto_limit:
+        return _json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
+    try:
+        result = runtime.open_exercise(
+            args.get("exercise_id"),
+            subject=args.get("subject"),
+            mode="auto",
+            requested_by="system",
+            timestamp=now.astimezone(ZoneInfo("UTC")).isoformat(),
+        )
+    except KeyError as exc:
+        return _json({"status": "no_matching_exercise", "error": str(exc)})
+    if result.get("status") == "opened":
+        delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
+        result["delivery"] = delivery_result.get("delivery")
+        result["delivery_status"] = delivery_result.get("status")
+        result["session"] = delivery_result.get("session") or result.get("session")
+    return _json(result)
+
+
 def learnbuddy_create_and_send_exercise(args: dict[str, Any] | None = None) -> str:
     """Create an exercise, open it immediately, and deliver it to the child adapter."""
     args = dict(args or {})
@@ -339,6 +387,7 @@ TOOLS = [
     ("learnbuddy_next_exercise", learnbuddy_next_exercise, "learnbuddy_learning", "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
     ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "learnbuddy_learning", "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer."),
     ("learnbuddy_deliver_pending_exercise", learnbuddy_deliver_pending_exercise, "learnbuddy_learning", "Repair or resend the current pending prompt to the child. Use when a parent reports that the learner did not receive the task."),
+    ("learnbuddy_dispatch_plan", learnbuddy_dispatch_plan, "learnbuddy_learning", "Scheduler-safe: open and deliver one due automatic LearnBuddy exercise when allowed-hours and daily-limit policy permit it."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy pending/queue status."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
