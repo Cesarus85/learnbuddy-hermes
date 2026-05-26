@@ -45,6 +45,7 @@ def test_public_alpha_docs_are_not_stub_placeholders() -> None:
         "docs/quickstart-telegram.md",
         "docs/quickstart-vps.md",
         "docs/demo-flow.md",
+        "INSTALL.md",
     ]
     forbidden_phrases = [
         "early scaffold",
@@ -88,6 +89,27 @@ def test_demo_exercise_fixture_is_valid_and_public_safe() -> None:
         assert 1 <= item["difficulty"] <= 5
 
     assert {"math", "german", "english"} <= subjects
+
+
+def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
+    text = read_repo_file("INSTALL.md")
+    required_snippets = [
+        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash",
+        "hermes setup",
+        "git clone https://github.com/Cesarus85/learnbuddy-hermes.git",
+        "python -m pip install -e '.[test]'",
+        "learnbuddy setup",
+        "learnbuddy doctor",
+        "learnbuddy next --deliver",
+        "learnbuddy report --notify",
+        "delivery.mode: dry_run",
+        "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN",
+        "hermes plugins",
+        "pytest -q",
+    ]
+    assert_public_safe_text(text)
+    for snippet in required_snippets:
+        assert snippet in text
 
 
 def test_demo_flow_documents_full_public_smoke_path() -> None:

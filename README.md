@@ -69,6 +69,10 @@ docs/                               setup, safety, privacy, roadmap, demo flow
 tests/                              regression and public-alpha asset tests
 ```
 
+## Installation
+
+Start with [`INSTALL.md`](INSTALL.md) for the complete Hermes + LearnBuddy setup path.
+
 ## Quick start: local dry-run demo
 
 The fastest safe smoke test uses no Telegram token and sends nothing to the network:
