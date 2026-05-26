@@ -7,9 +7,10 @@ chatbot gateway.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 import json
 import os
 import urllib.error
@@ -48,6 +49,7 @@ def process_child_telegram_answers(
     send_feedback: bool = True,
     notify_parent: bool = True,
     transport: Transport | None = None,
+    now: str | datetime | None = None,
 ) -> dict[str, Any]:
     """Process at most one child Telegram answer for the current pending task."""
     load_env_file(env_file)
@@ -75,8 +77,6 @@ def process_child_telegram_answers(
         return {"status": "not_configured", "missing": missing}
 
     pending = runtime.status().get("pending")
-    if not pending:
-        return {"status": "no_pending"}
 
     assert token is not None
     assert chat_id is not None
@@ -96,26 +96,39 @@ def process_child_telegram_answers(
     if not isinstance(updates, list):
         return {"status": "error", "error": "telegram getUpdates returned invalid result"}
 
-    pending_since = _parse_iso(str(pending.get("timestamp") or ""))
+    pending_since = _parse_iso(str(pending.get("timestamp") or "")) if isinstance(pending, dict) else None
     candidate = _find_answer_update(updates, allowed_chat_id=str(chat_id), pending_since=pending_since)
     if not candidate:
         _advance_offset(watch_state_path, watch_state, updates)
-        pending_delivery = _deliver_pending_child_prompt_if_needed(config, runtime, pending)
-        return {"status": "no_answer", "updates_seen": len(updates), "pending_delivery": pending_delivery}
+        if isinstance(pending, dict):
+            pending_delivery = _deliver_pending_child_prompt_if_needed(config, runtime, pending)
+            return {"status": "no_answer", "updates_seen": len(updates), "pending_delivery": pending_delivery}
+        return {"status": "no_pending", "updates_seen": len(updates)}
 
     message = candidate["message"]
     answer_text = str(message.get("text") or "").strip()
     child_command = _classify_child_control_message(answer_text)
     if child_command:
-        command_result = _handle_child_control_message(
-            config,
-            runtime,
-            pending,
-            answer_text=answer_text,
-            command=child_command,
-            send_feedback=send_feedback,
-            notify_parent=notify_parent,
-        )
+        if isinstance(pending, dict):
+            command_result = _handle_child_control_message(
+                config,
+                runtime,
+                pending,
+                answer_text=answer_text,
+                command=child_command,
+                send_feedback=send_feedback,
+                notify_parent=notify_parent,
+                now=now,
+            )
+        else:
+            command_result = _handle_child_control_message_without_pending(
+                config,
+                runtime,
+                answer_text=answer_text,
+                command=child_command,
+                send_feedback=send_feedback,
+                now=now,
+            )
         _advance_offset(watch_state_path, watch_state, updates, minimum_next=int(candidate["update_id"]) + 1)
         return {
             "status": "child_command",
@@ -123,6 +136,9 @@ def process_child_telegram_answers(
             "message_id": message.get("message_id"),
             **command_result,
         }
+    if not isinstance(pending, dict):
+        _advance_offset(watch_state_path, watch_state, updates, minimum_next=int(candidate["update_id"]) + 1)
+        return {"status": "no_pending", "update_id": candidate["update_id"], "message_id": message.get("message_id")}
     result = runtime.submit_answer(answer_text, input_mode="text")
     promoted_session = result.get("promoted_session") if isinstance(result.get("promoted_session"), dict) else None
     child_delivery = None
@@ -200,11 +216,13 @@ def _deliver_pending_child_prompt_if_needed(config: LearnBuddyConfig, runtime: L
     return result
 
 
-def _with_metadata(delivery: dict[str, Any] | None, metadata: dict[str, Any]) -> dict[str, Any] | None:
+def _with_metadata(delivery: dict[str, Any] | None, metadata: dict[str, Any], *, text: str | None = None) -> dict[str, Any] | None:
     if delivery is None:
         return None
     result = dict(delivery)
     result["metadata"] = metadata
+    if text is not None:
+        result["text"] = text
     return result
 
 
@@ -239,10 +257,25 @@ def _classify_child_control_message(text: str) -> str | None:
         "ich komme nicht weiter",
         "ich verstehe es nicht",
     }
+    next_phrases = {
+        "noch eine",
+        "noch eine bitte",
+        "noch ne",
+        "noch ne bitte",
+        "naechste",
+        "naechste bitte",
+        "nächste",
+        "nächste bitte",
+        "neue aufgabe",
+        "neue aufgabe bitte",
+        "weiter",
+    }
     if normalized in repeat_phrases:
         return "repeat"
     if normalized in help_phrases:
         return "help"
+    if normalized in next_phrases:
+        return "next"
     return None
 
 
@@ -255,6 +288,7 @@ def _handle_child_control_message(
     command: str,
     send_feedback: bool,
     notify_parent: bool,
+    now: str | datetime | None = None,
 ) -> dict[str, Any]:
     if command == "repeat":
         metadata = {"kind": "pending_exercise_repeat", "session_id": pending.get("id")}
@@ -294,7 +328,165 @@ def _handle_child_control_message(
             parent_delivery = ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_help_request(help_request).to_dict()
         return {"command": "help", "help_request": help_request, "child_delivery": child_delivery, "parent_delivery": parent_delivery}
 
+    if command == "next":
+        metadata = {"kind": "finish_pending_first", "session_id": pending.get("id")}
+        text = f"Erst diese Aufgabe lösen, dann gibt’s die nächste:\n{pending.get('prompt')}"
+        child_delivery = None
+        if send_feedback:
+            child_delivery = _with_metadata(
+                delivery_adapter_from_config(config, recipient="child").deliver_child(
+                    DeliveryMessage(text=text, metadata=metadata)
+                ).to_dict(),
+                metadata,
+                text=text,
+            )
+        return {"command": "next", "dispatch": {"status": "pending_exists", "pending": pending}, "child_delivery": child_delivery, "parent_delivery": None}
+
     return {"command": command, "child_delivery": None, "parent_delivery": None}
+
+
+def _handle_child_control_message_without_pending(
+    config: LearnBuddyConfig,
+    runtime: LearnBuddyRuntime,
+    *,
+    answer_text: str,
+    command: str,
+    send_feedback: bool,
+    now: str | datetime | None,
+) -> dict[str, Any]:
+    if command == "next":
+        dispatch, child_delivery = _dispatch_child_requested_next_exercise(config, runtime, send_feedback=send_feedback, now=now)
+        return {"command": "next", "dispatch": dispatch, "child_delivery": child_delivery, "parent_delivery": None}
+
+    metadata = {"kind": "no_pending_child_command", "command": command}
+    text = "Gerade ist keine Aufgabe offen. Wenn du weiter üben möchtest, schreib: Noch eine."
+    child_delivery = None
+    if send_feedback:
+        child_delivery = _with_metadata(
+            delivery_adapter_from_config(config, recipient="child").deliver_child(DeliveryMessage(text=text, metadata=metadata)).to_dict(),
+            metadata,
+            text=text,
+        )
+    return {"command": command, "dispatch": {"status": "no_pending"}, "child_delivery": child_delivery, "parent_delivery": None}
+
+
+def _dispatch_child_requested_next_exercise(
+    config: LearnBuddyConfig,
+    runtime: LearnBuddyRuntime,
+    *,
+    send_feedback: bool,
+    now: str | datetime | None,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    current_time = _parse_policy_datetime(now, config.timezone)
+    if not _inside_allowed_hours(current_time, config.allowed_hours_from, config.allowed_hours_to):
+        dispatch = {
+            "status": "outside_allowed_hours",
+            "now": current_time.isoformat(),
+            "allowed_hours": {"from": config.allowed_hours_from, "to": config.allowed_hours_to},
+        }
+        return dispatch, _deliver_child_next_rejection(config, dispatch, "Jetzt ist gerade Lernpause. Frag deine Eltern, wenn du trotzdem üben möchtest.", send_feedback)
+
+    state = runtime.status()
+    if isinstance(state.get("pending"), dict):
+        dispatch = {"status": "pending_exists", "pending": state.get("pending")}
+        return dispatch, _deliver_child_next_rejection(config, dispatch, "Erst diese Aufgabe lösen, dann gibt’s die nächste.", send_feedback)
+
+    auto_count = _auto_sessions_today(runtime, current_time, config.timezone)
+    if auto_count >= config.daily_auto_limit:
+        dispatch = {"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count}
+        return dispatch, _deliver_child_next_rejection(config, dispatch, "Für heute reicht’s erstmal. Frag deine Eltern, wenn du noch mehr üben möchtest.", send_feedback)
+
+    try:
+        result = runtime.open_exercise(
+            mode="auto",
+            requested_by="system",
+            timestamp=current_time.astimezone(timezone.utc).isoformat(),
+        )
+    except KeyError as exc:
+        dispatch = {"status": "no_matching_exercise", "error": str(exc)}
+        return dispatch, _deliver_child_next_rejection(config, dispatch, "Ich habe gerade keine passende Aufgabe. Frag deine Eltern nach einer neuen Aufgabe.", send_feedback)
+
+    if result.get("status") != "opened":
+        dispatch = dict(result)
+        return dispatch, _deliver_child_next_rejection(config, dispatch, "Ich kann gerade keine neue Aufgabe öffnen. Frag deine Eltern kurz nach Hilfe.", send_feedback)
+
+    session = result.get("session") if isinstance(result.get("session"), dict) else {}
+    metadata = {"kind": "child_requested_next_exercise", "session_id": session.get("id")}
+    text = str(session.get("prompt") or result.get("prompt") or "")
+    child_delivery = None
+    dispatch = dict(result)
+    if send_feedback:
+        child_delivery = _with_metadata(
+            delivery_adapter_from_config(config, recipient="child").deliver_child(DeliveryMessage(text=text, metadata=metadata)).to_dict(),
+            metadata,
+            text=text,
+        )
+        if child_delivery is not None:
+            updated_session = runtime.mark_pending_delivery(child_delivery)
+            dispatch["delivery"] = child_delivery
+            dispatch["delivery_status"] = child_delivery.get("status")
+            dispatch["session"] = updated_session or session
+    return dispatch, child_delivery
+
+
+def _deliver_child_next_rejection(
+    config: LearnBuddyConfig,
+    dispatch: dict[str, Any],
+    text: str,
+    send_feedback: bool,
+) -> dict[str, Any] | None:
+    if not send_feedback:
+        return None
+    metadata = {"kind": "child_next_rejected", "reason": dispatch.get("status")}
+    return _with_metadata(
+        delivery_adapter_from_config(config, recipient="child").deliver_child(DeliveryMessage(text=text, metadata=metadata)).to_dict(),
+        metadata,
+        text=text,
+    )
+
+
+def _parse_policy_datetime(value: str | datetime | None, timezone_name: str) -> datetime:
+    zone = ZoneInfo(timezone_name)
+    if isinstance(value, datetime):
+        parsed = value
+    elif value:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    else:
+        return datetime.now(zone)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=zone)
+    return parsed.astimezone(zone)
+
+
+def _parse_clock(value: str) -> time:
+    return time.fromisoformat(value)
+
+
+def _inside_allowed_hours(now: datetime, start_text: str, end_text: str) -> bool:
+    current = now.time().replace(second=0, microsecond=0)
+    start = _parse_clock(start_text)
+    end = _parse_clock(end_text)
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
+
+
+def _auto_sessions_today(runtime: LearnBuddyRuntime, now: datetime, timezone_name: str) -> int:
+    zone = ZoneInfo(timezone_name)
+    count = 0
+    for session in runtime.sessions():
+        if session.get("mode") != "auto":
+            continue
+        timestamp = session.get("timestamp")
+        if not timestamp:
+            continue
+        session_time = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+        if session_time.tzinfo is None:
+            session_time = session_time.replace(tzinfo=timezone.utc)
+        if session_time.astimezone(zone).date() == now.date():
+            count += 1
+    return count
+
 
 def _find_answer_update(updates: list[Any], *, allowed_chat_id: str, pending_since: datetime | None) -> dict[str, Any] | None:
     for update in updates:

@@ -245,6 +245,146 @@ def test_telegram_answer_watcher_turns_child_help_into_parent_help_request(tmp_p
 
 
 
+def test_telegram_answer_watcher_tells_child_to_finish_pending_before_noch_eine(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+        parent_telegram_bot_token_env="PARENT_BOT",
+        parent_telegram_chat_id_env="PARENT_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    monkeypatch.setenv("PARENT_BOT", "parent-secret-token")
+    monkeypatch.setenv("PARENT_CHAT", "456")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+    exercise = runtime.add_exercise({"subject": "math", "prompt": "100 + 101?", "answer": "201"})
+    opened = runtime.open_exercise(exercise["id"])
+    pending_ts = int(datetime.fromisoformat(opened["session"]["timestamp"]).timestamp())
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 60, "message": {"message_id": 9, "date": pending_ts + 1, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "Noch eine"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(config, state_file=tmp_path / "watch.json", transport=fake_transport)
+
+    assert result["status"] == "child_command"
+    assert result["command"] == "next"
+    assert result["child_delivery"]["status"] == "dry_run"
+    assert result["child_delivery"]["metadata"]["kind"] == "finish_pending_first"
+    assert "Erst diese Aufgabe" in result["child_delivery"]["text"]
+    assert runtime.status()["pending"]["exercise_id"] == exercise["id"]
+    assert runtime.status()["pending"]["attempts"] == 0
+    assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 61
+
+
+
+def test_telegram_answer_watcher_dispatches_policy_bounded_noch_eine_without_pending(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+    exercise = runtime.add_exercise({"subject": "math", "prompt": "5 + 6?", "answer": "11"})
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 70, "message": {"message_id": 10, "date": 1_779_790_800, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "Noch eine bitte"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(
+        config,
+        state_file=tmp_path / "watch.json",
+        transport=fake_transport,
+        now="2026-05-26T10:00:00+02:00",
+    )
+
+    assert result["status"] == "child_command"
+    assert result["command"] == "next"
+    assert result["dispatch"]["status"] == "opened"
+    assert result["dispatch"]["session"]["exercise_id"] == exercise["id"]
+    assert result["dispatch"]["session"]["mode"] == "auto"
+    assert result["dispatch"]["session"]["requested_by"] == "system"
+    assert result["child_delivery"]["status"] == "dry_run"
+    assert result["child_delivery"]["metadata"]["kind"] == "child_requested_next_exercise"
+    assert runtime.status()["pending"]["exercise_id"] == exercise["id"]
+    assert runtime.status()["pending"]["delivery"]["child"]["status"] == "dry_run"
+    assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 71
+
+
+
+def test_telegram_answer_watcher_rejects_noch_eine_when_daily_limit_is_reached(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        daily_auto_limit=1,
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+    first = runtime.add_exercise({"subject": "math", "prompt": "2 + 2?", "answer": "4"})
+    runtime.open_exercise(first["id"], mode="auto", requested_by="system", timestamp="2026-05-26T07:30:00+00:00")
+    assert runtime.submit_answer("4")["result"] == "correct"
+    runtime.add_exercise({"subject": "german", "prompt": "Artikel von Baum?", "answer": "der"})
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 80, "message": {"message_id": 11, "date": 1_779_790_800, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "noch eine"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(
+        config,
+        state_file=tmp_path / "watch.json",
+        transport=fake_transport,
+        now="2026-05-26T10:00:00+02:00",
+    )
+
+    assert result["status"] == "child_command"
+    assert result["command"] == "next"
+    assert result["dispatch"]["status"] == "daily_limit_reached"
+    assert result["child_delivery"]["status"] == "dry_run"
+    assert result["child_delivery"]["metadata"]["kind"] == "child_next_rejected"
+    assert "Für heute reicht" in result["child_delivery"]["text"]
+    assert runtime.status()["pending"] is None
+    assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 81
+
+
+
 def test_telegram_answer_watcher_reports_missing_env(tmp_path, monkeypatch):
     config = LearnBuddyConfig(storage_dir=str(tmp_path / "runtime"), child_telegram_bot_token_env="MISSING_BOT", child_telegram_chat_id_env="MISSING_CHAT")
     monkeypatch.delenv("MISSING_BOT", raising=False)

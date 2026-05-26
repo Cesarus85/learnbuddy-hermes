@@ -42,7 +42,14 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 
 ## Child boundary
 
-Parent command contracts are never exposed through the `learnbuddy_child` toolset. Child Telegram handling remains narrow: answers, `Nochmal`, `Hilfe`, and `Ich weiß nicht` are processed by the Kids-Bot watcher without admin capability.
+Parent command contracts are never exposed through the `learnbuddy_child` toolset. Child Telegram handling remains narrow: answers, `Nochmal`, `Hilfe`, `Ich weiß nicht`, and `Noch eine` are processed by the Kids-Bot watcher without admin capability.
+
+### Child `Noch eine`
+
+- With a pending task: the watcher replies that the learner should finish the current task first; attempts stay unchanged.
+- Without a pending task: the watcher may open and deliver exactly one automatic exercise through the scheduler-safe policy path.
+- Policy gates: `allowed_hours`, `daily_auto_limit`, no current pending session, and existing configured exercises only.
+- Rejections are child-friendly (`daily_limit_reached`, `outside_allowed_hours`, or `no_matching_exercise`) and never trigger free-form LLM task generation.
 
 ## Safety rules
 
