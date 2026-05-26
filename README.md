@@ -146,7 +146,7 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, and delivers it to the configured child adapter in one bounded call.
+The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, and delivers it to the configured child adapter in one bounded call. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, status reads are separate, and pushed parent reports require `notify=true` explicitly.
 
 ## Docs
 

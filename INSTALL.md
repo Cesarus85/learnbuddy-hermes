@@ -137,7 +137,7 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter.
+`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, report push requires `notify=true`, and status reads do not send messages.
 
 A child-facing profile should be created separately and locked down. Do not clone a parent/admin profile wholesale.
 

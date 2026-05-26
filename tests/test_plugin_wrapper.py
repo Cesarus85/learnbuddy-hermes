@@ -223,6 +223,43 @@ delivery:
     assert report["notification"]["status"] == "fake_sent"
 
 
+def test_registered_tools_expose_guided_parent_command_schemas():
+    plugin = load_plugin()
+
+    class FakeContext:
+        def __init__(self):
+            self.tools = {}
+
+        def register_tool(self, *, name, schema, toolset, handler):
+            self.tools[name] = {"schema": schema, "toolset": toolset, "handler": handler}
+
+    ctx = FakeContext()
+    plugin.register(ctx)
+
+    assert set(ctx.tools) == {
+        "learnbuddy_queue_exercise",
+        "learnbuddy_next_exercise",
+        "learnbuddy_create_and_send_exercise",
+        "learnbuddy_submit_answer",
+        "learnbuddy_learning_status",
+        "learnbuddy_parent_report",
+    }
+    create_schema = ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_create_and_send_exercise"]["toolset"] == "learnbuddy_learning"
+    assert create_schema["additionalProperties"] is False
+    assert create_schema["required"] == ["prompt"]
+    assert create_schema["properties"]["subject"]["enum"] == ["math", "german", "english", "general"]
+    assert create_schema["properties"]["answer"]["description"].startswith("Canonical expected answer")
+    assert "Do not call" in ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["description"]
+
+    answer_schema = ctx.tools["learnbuddy_submit_answer"]["schema"]["parameters"]
+    assert answer_schema["required"] == ["answer"]
+    assert answer_schema["properties"]["input_mode"]["enum"] == ["text", "audio"]
+
+    report_schema = ctx.tools["learnbuddy_parent_report"]["schema"]["parameters"]
+    assert report_schema["properties"]["notify"]["default"] is False
+
+
 def test_parent_report_can_dry_run_notify_parent(tmp_path):
     plugin = load_plugin()
     data_dir = tmp_path / "parent-notifier-data"

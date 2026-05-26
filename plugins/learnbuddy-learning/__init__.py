@@ -16,7 +16,75 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.1"
+PLUGIN_VERSION = "0.1.0-alpha.2"
+
+COMMON_PROPERTIES: dict[str, Any] = {
+    "config_path": {"type": "string", "description": "Optional LearnBuddy YAML path. Usually omitted; gateway uses LEARNBUDDY_CONFIG_PATH."},
+    "env_file": {"type": "string", "description": "Optional env file with delivery secrets. Usually omitted; gateway uses LEARNBUDDY_ENV_FILE."},
+    "data_dir": {"type": "string", "description": "Optional runtime data dir override for tests or isolated demos."},
+}
+
+EXERCISE_PROPERTIES: dict[str, Any] = {
+    **COMMON_PROPERTIES,
+    "subject": {"type": "string", "enum": ["math", "german", "english", "general"], "default": "general"},
+    "type": {"type": "string", "default": "short", "description": "Exercise type; keep short/question-answer for the alpha gateway."},
+    "prompt": {"type": "string", "description": "Child-facing exercise prompt to send."},
+    "answer": {"type": "string", "description": "Canonical expected answer. Required unless expected_answers is provided."},
+    "expected_answers": {"type": "array", "items": {"type": "string"}, "description": "Alternative accepted answers."},
+    "aliases": {"type": "array", "items": {"type": "string"}, "description": "Extra accepted aliases."},
+    "difficulty": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Optional rough difficulty from 1 easy to 5 hard."},
+    "topic": {"type": "string", "description": "Optional short topic label."},
+}
+
+TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "learnbuddy_queue_exercise": {
+        "type": "object",
+        "properties": EXERCISE_PROPERTIES,
+        "required": ["prompt"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_next_exercise": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "exercise_id": {"type": "string", "description": "Specific exercise id to open; omit to pick the next by subject."},
+            "subject": {"type": "string", "enum": ["math", "german", "english", "general"]},
+            "mode": {"type": "string", "enum": ["manual", "auto"], "default": "manual"},
+            "requested_by": {"type": "string", "enum": ["parent", "child", "system"], "default": "parent"},
+            "deliver": {"type": "boolean", "default": False, "description": "Send opened prompt to the child delivery adapter."},
+        },
+        "additionalProperties": False,
+    },
+    "learnbuddy_create_and_send_exercise": {
+        "type": "object",
+        "properties": {**EXERCISE_PROPERTIES, "deliver": {"type": "boolean", "default": True}},
+        "required": ["prompt"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_submit_answer": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "answer": {"type": "string", "description": "Answer text to evaluate for the currently pending exercise."},
+            "input_mode": {"type": "string", "enum": ["text", "audio"], "default": "text"},
+        },
+        "required": ["answer"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_learning_status": {
+        "type": "object",
+        "properties": COMMON_PROPERTIES,
+        "additionalProperties": False,
+    },
+    "learnbuddy_parent_report": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "notify": {"type": "boolean", "default": False, "description": "Send the report to the configured parent adapter when true."},
+        },
+        "additionalProperties": False,
+    },
+}
 
 
 def _load_env_file(args: dict[str, Any] | None = None) -> None:
@@ -151,12 +219,12 @@ def learnbuddy_parent_report(args: dict[str, Any] | None = None) -> str:
 
 
 TOOLS = [
-    ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "Create a bounded LearnBuddy exercise."),
-    ("learnbuddy_next_exercise", learnbuddy_next_exercise, "Open or queue the next LearnBuddy exercise."),
-    ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "Create a LearnBuddy exercise, open it, and deliver it to the child."),
-    ("learnbuddy_submit_answer", learnbuddy_submit_answer, "Submit an answer for the pending LearnBuddy exercise."),
+    ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "Create a bounded LearnBuddy exercise for later use. Parent UX: use this only when the parent explicitly asks to queue, not send."),
+    ("learnbuddy_next_exercise", learnbuddy_next_exercise, "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
+    ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer."),
+    ("learnbuddy_submit_answer", learnbuddy_submit_answer, "Submit an answer for the currently pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "Show LearnBuddy pending/queue status."),
-    ("learnbuddy_parent_report", learnbuddy_parent_report, "Summarize LearnBuddy progress for a parent."),
+    ("learnbuddy_parent_report", learnbuddy_parent_report, "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
 ]
 
 
@@ -166,7 +234,7 @@ def register(ctx):  # pragma: no cover - depends on Hermes plugin runtime
         schema = {
             "name": name,
             "description": description,
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": True},
+            "parameters": TOOL_SCHEMAS[name],
         }
         ctx.register_tool(name=name, schema=schema, toolset="learnbuddy_learning", handler=lambda args, _handler=handler, **_: _handler(args))
     return None
