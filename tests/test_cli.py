@@ -81,3 +81,15 @@ delivery:
     assert report["overall"] == "ok"
     assert report["config"]["child_id"] == "kid-json"
     assert {check["name"] for check in report["checks"]} >= {"config", "storage", "delivery"}
+
+
+def test_doctor_accepts_creatable_storage_path(capsys, tmp_path, monkeypatch):
+    hermes_home = tmp_path / "fresh-hermes-home"
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+
+    assert "overall=ok" in out
+    assert f"storage_dir={hermes_home / 'family' / 'learnbuddy'}" in out
+    assert "creatable=True" in out

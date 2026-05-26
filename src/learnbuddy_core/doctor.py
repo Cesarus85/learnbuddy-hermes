@@ -53,16 +53,25 @@ def format_text_report(report: dict[str, Any]) -> str:
 
 def _storage_check(config: LearnBuddyConfig) -> dict[str, Any]:
     storage = config.resolved_storage_dir()
-    parent = storage if storage.exists() else storage.parent
-    writable = parent.exists() and os.access(parent, os.W_OK)
+    existing_ancestor = _nearest_existing_parent(storage)
+    writable = os.access(existing_ancestor, os.W_OK)
+    creatable = not storage.exists() and writable
     return {
         "name": "storage",
         "status": "ok" if writable else "error",
         "path": str(storage),
         "exists": storage.exists(),
-        "parent_exists": parent.exists(),
-        "parent_writable": writable,
+        "parent_exists": storage.parent.exists(),
+        "parent_writable": os.access(storage.parent, os.W_OK) if storage.parent.exists() else False,
+        "creatable": creatable,
     }
+
+
+def _nearest_existing_parent(path: Path) -> Path:
+    current = path if path.exists() else path.parent
+    while not current.exists() and current != current.parent:
+        current = current.parent
+    return current
 
 
 def _delivery_checks(config: LearnBuddyConfig) -> list[dict[str, Any]]:
@@ -97,7 +106,7 @@ def _telegram_env_check(name: str, token_env: str, chat_env: str) -> dict[str, A
 
 def _format_check(check: dict[str, Any]) -> str:
     fields: list[str] = [f"check={check['name']}", f"status={check['status']}"]
-    for key in ["missing", "mode", "path", "exists", "parent_exists", "parent_writable", "error"]:
+    for key in ["missing", "mode", "path", "exists", "parent_exists", "parent_writable", "creatable", "error"]:
         if key not in check:
             continue
         value = check[key]
