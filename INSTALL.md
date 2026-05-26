@@ -141,19 +141,38 @@ LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 
 `LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter. It also exposes `learnbuddy_parent_help_request` as the public-safe equivalent of the private Vision/Sophia parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, help/report pushes require explicit notification flags, and status reads do not send messages.
 
-A child-facing profile should be created separately and locked down. Do not clone a parent/admin profile wholesale.
+The parent/main profile can use the broad `learnbuddy_learning` toolset for parent/admin commands. A child-facing profile should be created separately and locked down with only the narrow `learnbuddy_child` toolset. Do not clone a parent/admin profile wholesale.
 
-Example shape:
+Fast path:
+
+```bash
+scripts/setup-child-profile.sh \
+  --profile learnbuddy-child \
+  --config ./learnbuddy.yaml
+```
+
+Optional model setup:
+
+```bash
+scripts/setup-child-profile.sh \
+  --profile learnbuddy-child \
+  --config ./learnbuddy.yaml \
+  --provider your-provider \
+  --model your-model
+```
+
+Manual shape:
 
 ```bash
 hermes profile create learnbuddy-child --no-skills --no-alias
 hermes --profile learnbuddy-child config set model.provider your-provider
 hermes --profile learnbuddy-child config set model.default your-model
 hermes --profile learnbuddy-child plugins enable learnbuddy-learning || true
+hermes --profile learnbuddy-child config set platform_toolsets.telegram '["learnbuddy_child","tts","vision"]'
 hermes --profile learnbuddy-child config check
 ```
 
-Before any real child uses it, verify the child profile has no terminal, file, code execution, smart-home, purchasing, or generic messaging tools enabled. Only bounded LearnBuddy tools should be available.
+Before any real child uses it, verify the child profile has no terminal, file, code execution, smart-home, purchasing, broad skills/delegation/cron, or generic messaging tools enabled. See [`docs/setup-child-profile.md`](docs/setup-child-profile.md).
 
 ## 8. Optional: Telegram delivery
 

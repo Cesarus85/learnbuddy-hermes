@@ -16,7 +16,7 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.3"
+PLUGIN_VERSION = "0.1.0-alpha.4"
 
 COMMON_PROPERTIES: dict[str, Any] = {
     "config_path": {"type": "string", "description": "Optional LearnBuddy YAML path. Usually omitted; gateway uses LEARNBUDDY_CONFIG_PATH."},
@@ -94,6 +94,32 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "urgent": {"type": "boolean", "default": False},
             "requested_by": {"type": "string", "enum": ["child", "parent", "system"], "default": "child"},
             "notify": {"type": "boolean", "default": False, "description": "Send the help request to the configured parent adapter when true."},
+        },
+        "required": ["reason"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_child_submit_answer": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "answer": {"type": "string", "description": "Child answer text for the currently pending exercise."},
+            "input_mode": {"type": "string", "enum": ["text", "audio"], "default": "text"},
+        },
+        "required": ["answer"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_child_status": {
+        "type": "object",
+        "properties": COMMON_PROPERTIES,
+        "additionalProperties": False,
+    },
+    "learnbuddy_child_request_parent_help": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "reason": {"type": "string", "description": "Short parent-facing reason why the learner needs help."},
+            "subject": {"type": "string", "enum": ["math", "german", "english", "general"]},
+            "urgent": {"type": "boolean", "default": False},
         },
         "required": ["reason"],
         "additionalProperties": False,
@@ -249,24 +275,46 @@ def learnbuddy_parent_help_request(args: dict[str, Any] | None = None) -> str:
     return _json({"status": "created", "help_request": request})
 
 
+def learnbuddy_child_submit_answer(args: dict[str, Any] | None = None) -> str:
+    """Child-profile alias: submit an answer for the current exercise."""
+    return learnbuddy_submit_answer(args)
+
+
+def learnbuddy_child_status(args: dict[str, Any] | None = None) -> str:
+    """Child-profile alias: return only the bounded LearnBuddy status."""
+    return learnbuddy_learning_status(args)
+
+
+def learnbuddy_child_request_parent_help(args: dict[str, Any] | None = None) -> str:
+    """Child-profile alias: request parent help and notify the parent adapter."""
+    child_args = dict(args or {})
+    child_args["requested_by"] = "child"
+    child_args["target"] = "parents"
+    child_args["notify"] = True
+    return learnbuddy_parent_help_request(child_args)
+
+
 TOOLS = [
-    ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "Create a bounded LearnBuddy exercise for later use. Parent UX: use this only when the parent explicitly asks to queue, not send."),
-    ("learnbuddy_next_exercise", learnbuddy_next_exercise, "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
-    ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer."),
-    ("learnbuddy_submit_answer", learnbuddy_submit_answer, "Submit an answer for the currently pending LearnBuddy exercise."),
-    ("learnbuddy_learning_status", learnbuddy_learning_status, "Show LearnBuddy pending/queue status."),
-    ("learnbuddy_parent_report", learnbuddy_parent_report, "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
-    ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
+    ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "learnbuddy_learning", "Create a bounded LearnBuddy exercise for later use. Parent UX: use this only when the parent explicitly asks to queue, not send."),
+    ("learnbuddy_next_exercise", learnbuddy_next_exercise, "learnbuddy_learning", "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
+    ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "learnbuddy_learning", "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer."),
+    ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
+    ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy pending/queue status."),
+    ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
+    ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "learnbuddy_learning", "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
+    ("learnbuddy_child_submit_answer", learnbuddy_child_submit_answer, "learnbuddy_child", "Child profile: submit an answer for the current LearnBuddy exercise. No file, terminal, or generic messaging access."),
+    ("learnbuddy_child_status", learnbuddy_child_status, "learnbuddy_child", "Child profile: check whether a LearnBuddy exercise is pending."),
+    ("learnbuddy_child_request_parent_help", learnbuddy_child_request_parent_help, "learnbuddy_child", "Child profile: ask the configured parent for learning help. Use only for learning support, not external actions."),
 ]
 
 
 def register(ctx):  # pragma: no cover - depends on Hermes plugin runtime
     """Register bounded tools with Hermes when loaded as a user plugin."""
-    for name, handler, description in TOOLS:
+    for name, handler, toolset, description in TOOLS:
         schema = {
             "name": name,
             "description": description,
             "parameters": TOOL_SCHEMAS[name],
         }
-        ctx.register_tool(name=name, schema=schema, toolset="learnbuddy_learning", handler=lambda args, _handler=handler, **_: _handler(args))
+        ctx.register_tool(name=name, schema=schema, toolset=toolset, handler=lambda args, _handler=handler, **_: _handler(args))
     return None

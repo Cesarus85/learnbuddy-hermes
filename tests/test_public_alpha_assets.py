@@ -43,6 +43,7 @@ def test_public_alpha_docs_are_not_stub_placeholders() -> None:
         "SECURITY.md",
         "PRIVACY.md",
         "docs/quickstart-telegram.md",
+        "docs/setup-child-profile.md",
         "docs/quickstart-vps.md",
         "docs/demo-flow.md",
         "INSTALL.md",
@@ -105,6 +106,8 @@ def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
         "delivery.mode: dry_run",
         "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN",
         "hermes plugins",
+        "learnbuddy_child",
+        "scripts/setup-child-profile.sh",
         "pytest -q",
     ]
     assert_public_safe_text(text)

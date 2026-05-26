@@ -108,6 +108,7 @@ Phase 3 doctor/CLI slice adds:
 - text and JSON `learnbuddy doctor` output
 - storage and delivery environment checks that report env-var names only, not values
 - JSON runtime commands: `learnbuddy queue`, `next`, `answer`, `status`, `help-request`, `watch-telegram-answers`, and `report`
+- Hermes plugin role split: broad parent/admin `learnbuddy_learning` toolset plus narrow child-facing `learnbuddy_child` aliases
 - public-safe `learnbuddy setup` that creates a starter config and local storage without secrets
 - zip-based `learnbuddy backup` and `learnbuddy restore` for runtime data files only
 

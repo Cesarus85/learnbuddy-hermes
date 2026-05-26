@@ -87,7 +87,9 @@ Expected behavior:
 
 ## Safety checklist
 
-- Child profile has no terminal, file, code execution, smart-home, purchasing, or generic messaging tools.
+- Parent/main profile may use `learnbuddy_learning` for admin commands.
+- Direct child chat uses a separate Hermes profile with `learnbuddy_child`; see [`setup-child-profile.md`](setup-child-profile.md).
+- Child profile has no terminal, file, code execution, smart-home, purchasing, broad skills/delegation/cron, or generic messaging tools.
 - Parent controls setup and credentials.
 - Exercises are age-appropriate and synthetic until you intentionally enter family-specific content locally.
 - Backups are treated as private learning data.

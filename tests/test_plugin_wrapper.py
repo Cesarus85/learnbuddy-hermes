@@ -244,6 +244,9 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_learning_status",
         "learnbuddy_parent_report",
         "learnbuddy_parent_help_request",
+        "learnbuddy_child_submit_answer",
+        "learnbuddy_child_status",
+        "learnbuddy_child_request_parent_help",
     }
     create_schema = ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["parameters"]
     assert ctx.tools["learnbuddy_create_and_send_exercise"]["toolset"] == "learnbuddy_learning"
@@ -266,10 +269,17 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert help_schema["properties"]["notify"]["default"] is False
     assert "external/non-learning" in ctx.tools["learnbuddy_parent_help_request"]["schema"]["description"]
 
+    assert ctx.tools["learnbuddy_child_submit_answer"]["toolset"] == "learnbuddy_child"
+    assert ctx.tools["learnbuddy_child_status"]["toolset"] == "learnbuddy_child"
+    child_help_schema = ctx.tools["learnbuddy_child_request_parent_help"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_child_request_parent_help"]["toolset"] == "learnbuddy_child"
+    assert child_help_schema["required"] == ["reason"]
+    assert "notify" not in child_help_schema["properties"]
 
-def test_parent_help_request_can_dry_run_notify_parent(tmp_path):
+
+def test_child_profile_aliases_are_narrow_and_parent_help_notifies(tmp_path):
     plugin = load_plugin()
-    data_dir = tmp_path / "parent-help-data"
+    data_dir = tmp_path / "child-profile-data"
     config_path = tmp_path / "learnbuddy.yaml"
     config_path.write_text(
         f"""
@@ -285,21 +295,32 @@ delivery:
 """.strip(),
         encoding="utf-8",
     )
-
-    result = json.loads(plugin.learnbuddy_parent_help_request({
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
         "config_path": str(config_path),
         "subject": "math",
-        "reason": "Alex hängt bei Brüchen fest.",
+        "prompt": "Was ist 3 + 3?",
+        "answer": "6",
+    }))
+    json.loads(plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": queued["exercise"]["id"]}))
+
+    answer = json.loads(plugin.learnbuddy_child_submit_answer({"config_path": str(config_path), "answer": "6"}))
+    status = json.loads(plugin.learnbuddy_child_status({"config_path": str(config_path)}))
+    result = json.loads(plugin.learnbuddy_child_request_parent_help({
+        "config_path": str(config_path),
+        "subject": "math",
+        "reason": "Alex möchte nochmal Brüche üben.",
         "urgent": True,
-        "notify": True,
     }))
 
+    assert answer["result"] == "correct"
+    assert status["pending"] is None
     assert result["status"] == "created"
     request = result["help_request"]
     assert request["child_id"] == "kid-help"
     assert request["child_name"] == "Alex"
     assert request["agent_name"] == "BuddyBot"
     assert request["subject"] == "math"
+    assert request["requested_by"] == "child"
     assert request["notification"] == {
         "status": "dry_run",
         "adapter": "dry_run",

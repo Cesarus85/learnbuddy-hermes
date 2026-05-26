@@ -1,7 +1,8 @@
-# Merge into the child Hermes profile config. Example only.
+# Merge into a dedicated child Hermes profile config. Example only.
+# The child profile should expose only the narrow child toolset.
 platform_toolsets:
   telegram:
-    - learnbuddy_learning
+    - learnbuddy_child
     - tts
     - vision
 # Forbidden for child profile by default:
@@ -10,3 +11,6 @@ platform_toolsets:
 # - code_execution
 # - homeassistant
 # - messaging
+# - skills
+# - delegation
+# - cronjob

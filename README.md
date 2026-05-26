@@ -46,6 +46,8 @@ See [`docs/extraction-roadmap.md`](docs/extraction-roadmap.md) for the public-sa
 
 ## Safety baseline
 
+The parent/main Hermes profile may use the broader `learnbuddy_learning` toolset for admin tasks such as creating exercises, reading status, and sending reports. A child who chats directly with LearnBuddy should use a separate locked-down Hermes profile with the narrow `learnbuddy_child` toolset.
+
 The child-facing Hermes profile must be least-privilege. Default forbidden toolsets:
 
 - terminal
@@ -62,7 +64,7 @@ Only bounded LearnBuddy tools should be exposed to the child profile.
 ```text
 plugins/learnbuddy-learning/        Hermes plugin wrapper
 src/learnbuddy_core/                shared core logic
-scripts/learnbuddy                  local CLI entry point
+scripts/                            helper scripts for profile setup
 examples/                           safe example configs
 examples/exercises/de/              synthetic exercise fixtures
 templates/                          profile/config templates
@@ -154,6 +156,7 @@ The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent f
 ## Docs
 
 - [`docs/quickstart-telegram.md`](docs/quickstart-telegram.md)
+- [`docs/setup-child-profile.md`](docs/setup-child-profile.md)
 - [`docs/quickstart-vps.md`](docs/quickstart-vps.md)
 - [`docs/demo-flow.md`](docs/demo-flow.md)
 - [`docs/child-safety-model.md`](docs/child-safety-model.md)
