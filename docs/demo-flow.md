@@ -7,7 +7,7 @@ This is a complete public-alpha smoke path using synthetic data only. It is safe
 Prove the full lifecycle:
 
 ```text
-setup -> doctor -> queue -> next --deliver -> answer -> status -> report --notify -> backup -> restore
+setup -> doctor -> queue -> next --deliver -> deliver-pending -> answer -> status -> report --notify -> backup -> restore
 ```
 
 No Telegram token, chat ID, production child data, or private deployment path is needed.
@@ -68,15 +68,16 @@ learnbuddy queue \
 
 The command returns JSON with an exercise id.
 
-## 5. Open and dry-run deliver
+## 5. Open, dry-run deliver, and repair-send if needed
 
-This is the `learnbuddy next --deliver` step of the demo lifecycle.
+This is the `learnbuddy next --deliver` step of the demo lifecycle. `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful `next --deliver`.
 
 ```bash
 learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy deliver-pending --config ./learnbuddy.yaml
 ```
 
-Expected result: one pending exercise opens and the delivery result has `status` set to `dry_run`.
+Expected result: one pending exercise opens, the delivery result has `status` set to `dry_run`, and the pending session records child-delivery metadata.
 
 ## 6. Submit an answer
 

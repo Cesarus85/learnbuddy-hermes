@@ -16,7 +16,7 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.5"
+PLUGIN_VERSION = "0.1.0-alpha.6"
 
 COMMON_PROPERTIES: dict[str, Any] = {
     "config_path": {"type": "string", "description": "Optional LearnBuddy YAML path. Usually omitted; gateway uses LEARNBUDDY_CONFIG_PATH."},
@@ -59,6 +59,14 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {**EXERCISE_PROPERTIES, "deliver": {"type": "boolean", "default": True}},
         "required": ["prompt"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_deliver_pending_exercise": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "force": {"type": "boolean", "default": False, "description": "Send again even when the pending exercise is already marked delivered."},
+        },
         "additionalProperties": False,
     },
     "learnbuddy_submit_answer": {
@@ -182,6 +190,33 @@ def _delivery_adapter(config: LearnBuddyConfig, *, recipient: str = "child"):
     return delivery_adapter_from_config(config, recipient=recipient)
 
 
+def _delivery_succeeded(status: Any) -> bool:
+    return str(status or "") in {"sent", "dry_run"}
+
+
+def _deliver_pending_child_prompt(config: LearnBuddyConfig, runtime: LearnBuddyRuntime, *, force: bool = False) -> dict[str, Any]:
+    state = runtime.status()
+    pending = state.get("pending")
+    if not isinstance(pending, dict):
+        return {"status": "no_pending", "delivery": None, "session": None}
+    child_delivery = pending.get("delivery", {}).get("child", {}) if isinstance(pending.get("delivery"), dict) else {}
+    if _delivery_succeeded(child_delivery.get("status")) and not force:
+        return {"status": "already_sent", "delivery": child_delivery, "session": pending}
+    delivery = _delivery_adapter(config, recipient="child").deliver_child(
+        DeliveryMessage(
+            text=str(pending.get("prompt") or ""),
+            metadata={"kind": "pending_exercise", "session_id": pending.get("id")},
+        )
+    )
+    delivery_dict = delivery.to_dict()
+    updated = runtime.mark_pending_delivery(delivery_dict)
+    return {
+        "status": "sent" if _delivery_succeeded(delivery_dict.get("status")) else delivery_dict.get("status", "error"),
+        "delivery": delivery_dict,
+        "session": updated,
+    }
+
+
 def learnbuddy_queue_exercise(args: dict[str, Any] | None = None) -> str:
     """Create a synthetic/manual exercise in the configured LearnBuddy store."""
     args = dict(args or {})
@@ -211,14 +246,19 @@ def learnbuddy_next_exercise(args: dict[str, Any] | None = None) -> str:
         requested_by=args.get("requested_by", "parent"),
     )
     if args.get("deliver") and result.get("status") == "opened":
-        delivery = _delivery_adapter(config).deliver_child(
-            DeliveryMessage(
-                text=str(result.get("prompt") or ""),
-                metadata={"session_id": result.get("session", {}).get("id")},
-            )
-        )
-        result["delivery"] = delivery.to_dict()
+        delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
+        result["delivery"] = delivery_result.get("delivery")
+        result["delivery_status"] = delivery_result.get("status")
+        result["session"] = delivery_result.get("session") or result.get("session")
     return _json(result)
+
+
+def learnbuddy_deliver_pending_exercise(args: dict[str, Any] | None = None) -> str:
+    """Send or repair delivery of the currently pending child prompt."""
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    return _json(_deliver_pending_child_prompt(config, runtime, force=bool(args.get("force", False))))
 
 
 def learnbuddy_create_and_send_exercise(args: dict[str, Any] | None = None) -> str:
@@ -298,6 +338,7 @@ TOOLS = [
     ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "learnbuddy_learning", "Create a bounded LearnBuddy exercise for later use. Parent UX: use this only when the parent explicitly asks to queue, not send."),
     ("learnbuddy_next_exercise", learnbuddy_next_exercise, "learnbuddy_learning", "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
     ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "learnbuddy_learning", "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer."),
+    ("learnbuddy_deliver_pending_exercise", learnbuddy_deliver_pending_exercise, "learnbuddy_learning", "Repair or resend the current pending prompt to the child. Use when a parent reports that the learner did not receive the task."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy pending/queue status."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),

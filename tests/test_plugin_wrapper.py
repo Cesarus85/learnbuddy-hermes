@@ -240,6 +240,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_queue_exercise",
         "learnbuddy_next_exercise",
         "learnbuddy_create_and_send_exercise",
+        "learnbuddy_deliver_pending_exercise",
         "learnbuddy_submit_answer",
         "learnbuddy_learning_status",
         "learnbuddy_parent_report",
@@ -255,6 +256,10 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert create_schema["properties"]["subject"]["enum"] == ["math", "german", "english", "general"]
     assert create_schema["properties"]["answer"]["description"].startswith("Canonical expected answer")
     assert "Do not call" in ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["description"]
+    repair_schema = ctx.tools["learnbuddy_deliver_pending_exercise"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_deliver_pending_exercise"]["toolset"] == "learnbuddy_learning"
+    assert repair_schema["additionalProperties"] is False
+    assert repair_schema["properties"]["force"]["default"] is False
 
     answer_schema = ctx.tools["learnbuddy_submit_answer"]["schema"]["parameters"]
     assert answer_schema["required"] == ["answer"]

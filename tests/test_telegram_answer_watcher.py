@@ -125,6 +125,33 @@ def test_telegram_answer_watcher_ignores_commands_and_old_messages(tmp_path, mon
     assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 22
 
 
+def test_telegram_answer_watcher_resends_undelivered_pending_prompt_when_no_answer(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    runtime = LearnBuddyRuntime(data_dir)
+    exercise = runtime.add_exercise({"prompt": "100 + 101?", "answer": "201"})
+    runtime.open_exercise(exercise["id"])
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {"ok": True, "result": []}
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(config, state_file=tmp_path / "watch.json", transport=fake_transport)
+
+    assert result["status"] == "no_answer"
+    assert result["pending_delivery"]["status"] == "dry_run"
+    assert runtime.status()["pending"]["delivery"]["child"]["status"] == "dry_run"
+
+
+
 def test_telegram_answer_watcher_reports_missing_env(tmp_path, monkeypatch):
     config = LearnBuddyConfig(storage_dir=str(tmp_path / "runtime"), child_telegram_bot_token_env="MISSING_BOT", child_telegram_chat_id_env="MISSING_CHAT")
     monkeypatch.delenv("MISSING_BOT", raising=False)

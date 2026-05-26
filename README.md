@@ -95,6 +95,7 @@ learnbuddy setup \
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
 learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy status --config ./learnbuddy.yaml
 learnbuddy help-request --config ./learnbuddy.yaml --reason "Learner needs a parent hint." --notify
@@ -142,7 +143,7 @@ delivery:
       target_env: LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
 ```
 
-`learnbuddy next --deliver` uses the child adapter. `learnbuddy report --notify` uses the parent adapter. `learnbuddy watch-telegram-answers` evaluates one Kids-bot answer, sends feedback, and if a queued exercise is promoted after a correct/exhausted answer, delivers that next prompt to the child automatically. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
+`learnbuddy next --deliver` uses the child adapter and persists child-delivery metadata on the pending session. `learnbuddy deliver-pending` repairs/resends the currently pending prompt when a parent reports that the learner never saw it. `learnbuddy report --notify` uses the parent adapter. `learnbuddy watch-telegram-answers` evaluates one Kids-bot answer, sends feedback, repairs any undelivered pending prompt when there is no answer, and if a queued exercise is promoted after a correct/exhausted answer, delivers that next prompt to the child automatically. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
 
 For Hermes gateway/plugin use, set profile env defaults so the model can call LearnBuddy tools without repeating local paths:
 
@@ -151,7 +152,7 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, and delivers it to the configured child adapter in one bounded call. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, status reads are separate, and pushed parent reports require `notify=true` explicitly.
+The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, delivers it to the configured child adapter in one bounded call, and stores delivery metadata on the pending session. `learnbuddy_deliver_pending_exercise` repairs/resends the currently pending prompt if the learner did not receive it. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, repair/resend is explicit, status reads are separate, and pushed parent reports require `notify=true` explicitly.
 
 ## Docs
 

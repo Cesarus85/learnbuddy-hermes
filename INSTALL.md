@@ -88,6 +88,7 @@ This step covers `learnbuddy next --deliver` and `learnbuddy report --notify` in
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
 learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy status --config ./learnbuddy.yaml
 learnbuddy help-request --config ./learnbuddy.yaml --reason "Learner needs a parent hint." --notify
@@ -139,7 +140,7 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter. It also exposes `learnbuddy_parent_help_request` as the public-safe equivalent of the private Vision/Sophia parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, help/report pushes require explicit notification flags, and status reads do not send messages.
+`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter → persist delivery metadata. `learnbuddy_deliver_pending_exercise` repairs/resends the current pending prompt when the learner did not receive it. It also exposes `learnbuddy_parent_help_request` as the public-safe equivalent of the private Vision/Sophia parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, repair/resend is explicit, help/report pushes require explicit notification flags, and status reads do not send messages.
 
 The parent/main profile can use the broad `learnbuddy_learning` toolset for parent/admin commands. A child-facing profile should be created separately and locked down with only the narrow `learnbuddy_child` toolset. Do not clone a parent/admin profile wholesale.
 
@@ -206,11 +207,12 @@ Run:
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnbuddy.env
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 
-`doctor` reports missing variable names, not secret values. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background.
+`doctor` reports missing variable names, not secret values. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background. If a pending exercise has no successful child-delivery metadata, the watcher repairs that by sending the current prompt before waiting for another answer; `learnbuddy deliver-pending` gives the same repair path as an explicit operator command.
 
 ## 9. VPS notes
 

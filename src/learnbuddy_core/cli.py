@@ -37,6 +37,33 @@ def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, sort_keys=True))
 
 
+def _delivery_succeeded(status: Any) -> bool:
+    return str(status or "") in {"sent", "dry_run"}
+
+
+def _deliver_pending_child_prompt(config: LearnBuddyConfig, runtime: LearnBuddyRuntime, *, force: bool = False) -> dict[str, Any]:
+    state = runtime.status()
+    pending = state.get("pending")
+    if not isinstance(pending, dict):
+        return {"status": "no_pending", "delivery": None, "session": None}
+    child_delivery = pending.get("delivery", {}).get("child", {}) if isinstance(pending.get("delivery"), dict) else {}
+    if _delivery_succeeded(child_delivery.get("status")) and not force:
+        return {"status": "already_sent", "delivery": child_delivery, "session": pending}
+    delivery = delivery_adapter_from_config(config, recipient="child").deliver_child(
+        DeliveryMessage(
+            text=str(pending.get("prompt") or ""),
+            metadata={"kind": "pending_exercise", "session_id": pending.get("id")},
+        )
+    )
+    delivery_dict = delivery.to_dict()
+    updated = runtime.mark_pending_delivery(delivery_dict)
+    return {
+        "status": "sent" if _delivery_succeeded(delivery_dict.get("status")) else delivery_dict.get("status", "error"),
+        "delivery": delivery_dict,
+        "session": updated,
+    }
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
     report = build_doctor_report(config)
@@ -104,15 +131,20 @@ def cmd_next(args: argparse.Namespace) -> int:
         requested_by=args.requested_by,
     )
     if args.deliver and result.get("status") == "opened":
-        delivery = delivery_adapter_from_config(config, recipient="child").deliver_child(
-            DeliveryMessage(
-                text=str(result.get("prompt") or ""),
-                metadata={"session_id": result.get("session", {}).get("id")},
-            )
-        )
-        result["delivery"] = delivery.to_dict()
+        delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
+        result["delivery"] = delivery_result.get("delivery")
+        result["delivery_status"] = delivery_result.get("status")
+        result["session"] = delivery_result.get("session") or result.get("session")
     _print_json(result)
     return 0
+
+
+def cmd_deliver_pending(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    result = _deliver_pending_child_prompt(config, runtime, force=args.force)
+    _print_json(result)
+    return 0 if result.get("status") in {"sent", "already_sent"} else 1
 
 
 def cmd_answer(args: argparse.Namespace) -> int:
@@ -211,6 +243,11 @@ def build_parser() -> argparse.ArgumentParser:
     next_exercise.add_argument("--requested-by", default="parent")
     next_exercise.add_argument("--deliver", action="store_true")
     next_exercise.set_defaults(func=cmd_next)
+
+    deliver_pending = sub.add_parser("deliver-pending", help="send or repair delivery of the current pending exercise")
+    _add_runtime_options(deliver_pending)
+    deliver_pending.add_argument("--force", action="store_true", help="send again even if the pending exercise is already marked delivered")
+    deliver_pending.set_defaults(func=cmd_deliver_pending)
 
     answer = sub.add_parser("answer", help="submit an answer for the pending exercise")
     _add_runtime_options(answer)

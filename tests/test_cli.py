@@ -163,6 +163,35 @@ delivery:
         "message_id": None,
         "error": None,
     }
+    assert main(["status", "--config", str(config_path)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["pending"]["delivery"]["child"]["status"] == "dry_run"
+
+
+def test_cli_deliver_pending_resends_undelivered_prompt(capsys, tmp_path):
+    data_dir = tmp_path / "cli-repair-delivery-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["queue", "--config", str(config_path), "--prompt", "100 + 101?", "--answer", "201"]) == 0
+    exercise_id = json.loads(capsys.readouterr().out)["exercise"]["id"]
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
+    opened = json.loads(capsys.readouterr().out)
+    assert opened["session"]["delivery"]["child"]["status"] == "not_attempted"
+
+    assert main(["deliver-pending", "--config", str(config_path)]) == 0
+    repaired = json.loads(capsys.readouterr().out)
+
+    assert repaired["status"] == "sent"
+    assert repaired["delivery"]["status"] == "dry_run"
+    assert repaired["session"]["delivery"]["child"]["status"] == "dry_run"
 
 
 def test_cli_report_can_dry_run_notify_parent(capsys, tmp_path):

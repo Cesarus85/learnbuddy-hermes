@@ -74,7 +74,27 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
         handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def _fresh_delivery_state() -> dict[str, Any]:
+    return {"child": {"status": "not_attempted", "attempts": 0}}
+
+
+def _normalize_session_delivery(session: dict[str, Any]) -> dict[str, Any]:
+    delivery = session.get("delivery")
+    if not isinstance(delivery, dict):
+        delivery = {}
+    child = delivery.get("child")
+    if not isinstance(child, dict):
+        child = {"status": "not_attempted", "attempts": 0}
+    else:
+        child.setdefault("status", "not_attempted")
+        child.setdefault("attempts", 0)
+    delivery["child"] = child
+    session["delivery"] = delivery
+    return session
+
+
 class LearnBuddyRuntime:
+
     """Local state machine for one bounded LearnBuddy child profile."""
 
     def __init__(
@@ -119,6 +139,34 @@ class LearnBuddyRuntime:
 
     def status(self) -> dict[str, Any]:
         return self._state()
+
+    def mark_pending_delivery(self, delivery_result: dict[str, Any], *, recipient: str = "child") -> dict[str, Any] | None:
+        """Persist user-visible delivery metadata for the current pending session."""
+        if recipient != "child":
+            raise ValueError(f"unsupported delivery recipient: {recipient}")
+        state = self._state()
+        pending = state.get("pending")
+        if not isinstance(pending, dict):
+            return None
+        pending = _normalize_session_delivery(pending)
+        previous = pending["delivery"].get(recipient, {})
+        attempts = int(previous.get("attempts", 0)) + 1 if isinstance(previous, dict) else 1
+        status = str(delivery_result.get("status") or "unknown")
+        record = {
+            "status": status,
+            "adapter": delivery_result.get("adapter"),
+            "target": delivery_result.get("target"),
+            "message_id": delivery_result.get("message_id"),
+            "error": delivery_result.get("error"),
+            "attempts": attempts,
+            "attempted_at": _now(),
+        }
+        if status in {"sent", "dry_run"}:
+            record["delivered_at"] = record["attempted_at"]
+        pending["delivery"][recipient] = record
+        state["pending"] = pending
+        self._write_state(state)
+        return pending
 
     def open_exercise(self, exercise_id: str | None = None, *, subject: str | None = None, mode: str = "manual", requested_by: str = "parent") -> dict[str, Any]:
         exercise = self._choose_exercise(exercise_id=exercise_id, subject=subject)
@@ -258,6 +306,13 @@ class LearnBuddyRuntime:
         state = _read_json(self.paths.state, {"pending": None, "queue": [], "profile": self._profile()})
         state.setdefault("pending", None)
         state.setdefault("queue", [])
+        if isinstance(state.get("pending"), dict):
+            state["pending"] = _normalize_session_delivery(state["pending"])
+        normalized_queue = []
+        for item in state.get("queue", []):
+            if isinstance(item, dict):
+                normalized_queue.append(_normalize_session_delivery(item))
+        state["queue"] = normalized_queue
         state["profile"] = self._profile()
         return state
 
@@ -289,6 +344,7 @@ class LearnBuddyRuntime:
             "type": exercise.get("type", "short"),
             "prompt": exercise.get("prompt"),
             "attempts": 0,
+            "delivery": _fresh_delivery_state(),
             "mode": mode,
             "requested_by": requested_by,
             "timestamp": _now(),
@@ -302,6 +358,7 @@ class LearnBuddyRuntime:
         next_session.pop("queued_at", None)
         next_session["timestamp"] = _now()
         next_session["attempts"] = 0
+        next_session["delivery"] = _fresh_delivery_state()
         state["pending"] = next_session
         _append_jsonl(self.paths.sessions, next_session)
         return next_session

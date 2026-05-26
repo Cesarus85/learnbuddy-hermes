@@ -99,7 +99,8 @@ def process_child_telegram_answers(
     candidate = _find_answer_update(updates, allowed_chat_id=str(chat_id), pending_since=pending_since)
     if not candidate:
         _advance_offset(watch_state_path, watch_state, updates)
-        return {"status": "no_answer", "updates_seen": len(updates)}
+        pending_delivery = _deliver_pending_child_prompt_if_needed(config, runtime, pending)
+        return {"status": "no_answer", "updates_seen": len(updates), "pending_delivery": pending_delivery}
 
     message = candidate["message"]
     answer_text = str(message.get("text") or "").strip()
@@ -120,6 +121,7 @@ def process_child_telegram_answers(
                     metadata={"kind": "promoted_exercise", "session_id": promoted_session.get("id")},
                 )
             ).to_dict()
+            runtime.mark_pending_delivery(next_child_delivery)
     if notify_parent:
         parent_text = _render_parent_answer_notification(config, pending, answer_text, result)
         parent_delivery = delivery_adapter_from_config(config, recipient="parent").deliver_parent(
@@ -155,6 +157,28 @@ def _telegram_transport(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("Telegram response root must be a mapping")
     return parsed
+
+
+def _delivery_succeeded(status: Any) -> bool:
+    return str(status or "") in {"sent", "dry_run"}
+
+
+def _deliver_pending_child_prompt_if_needed(config: LearnBuddyConfig, runtime: LearnBuddyRuntime, pending: dict[str, Any]) -> dict[str, Any] | None:
+    raw_delivery = pending.get("delivery")
+    delivery = raw_delivery if isinstance(raw_delivery, dict) else {}
+    raw_child_delivery = delivery.get("child")
+    child_delivery = raw_child_delivery if isinstance(raw_child_delivery, dict) else {}
+    if _delivery_succeeded(child_delivery.get("status")):
+        return child_delivery
+    child_adapter = delivery_adapter_from_config(config, recipient="child")
+    result = child_adapter.deliver_child(
+        DeliveryMessage(
+            text=str(pending.get("prompt") or ""),
+            metadata={"kind": "pending_exercise_repair", "session_id": pending.get("id")},
+        )
+    ).to_dict()
+    runtime.mark_pending_delivery(result)
+    return result
 
 
 def _find_answer_update(updates: list[Any], *, allowed_chat_id: str, pending_since: datetime | None) -> dict[str, Any] | None:

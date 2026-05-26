@@ -135,6 +135,27 @@ def test_runtime_opens_exercise_queues_second_and_promotes_after_exhaustion(tmp_
     assert runtime.status()["pending"] is None
 
 
+def test_runtime_tracks_pending_child_delivery_status(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy")
+    exercise = runtime.add_exercise({"prompt": "100 + 101?", "answer": "201"})
+
+    opened = runtime.open_exercise(exercise["id"])
+
+    assert opened["session"]["delivery"]["child"]["status"] == "not_attempted"
+    updated = runtime.mark_pending_delivery({
+        "status": "dry_run",
+        "adapter": "dry_run",
+        "target": "child",
+        "message_id": None,
+        "error": None,
+    })
+    assert updated["delivery"]["child"]["status"] == "dry_run"
+    assert updated["delivery"]["child"]["attempts"] == 1
+    assert updated["delivery"]["child"]["delivered_at"]
+    assert runtime.status()["pending"]["delivery"]["child"]["status"] == "dry_run"
+
+
+
 def test_runtime_parent_report_uses_synthetic_sessions_and_answers(tmp_path):
     runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", max_attempts=3, child_name="Alex", agent_name="BuddyBot")
     first = runtime.add_exercise({"subject": "math", "prompt": "3 + 4?", "answer": "7"})
