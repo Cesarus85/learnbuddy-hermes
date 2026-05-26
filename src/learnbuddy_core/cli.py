@@ -11,6 +11,7 @@ from .doctor import build_doctor_report, doctor_exit_code, format_text_report
 from .maintenance import backup_runtime_data, create_setup, restore_runtime_data
 from .notifier import ParentNotifier
 from .runtime import LearnBuddyRuntime
+from .telegram_answer_watcher import process_child_telegram_answers
 
 
 def _config_from_args(args: argparse.Namespace) -> LearnBuddyConfig:
@@ -152,6 +153,19 @@ def cmd_help_request(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_watch_telegram_answers(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    result = process_child_telegram_answers(
+        config,
+        env_file=args.env_file,
+        state_file=args.state_file,
+        send_feedback=not args.no_feedback,
+        notify_parent=not args.no_parent_notify,
+    )
+    _print_json(result)
+    return 1 if result.get("status") == "error" else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="learnbuddy")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -222,6 +236,14 @@ def build_parser() -> argparse.ArgumentParser:
     help_request.add_argument("--urgent", action="store_true")
     help_request.add_argument("--notify", action="store_true")
     help_request.set_defaults(func=cmd_help_request)
+
+    watch = sub.add_parser("watch-telegram-answers", help="process one pending child Telegram answer")
+    watch.add_argument("--config", help="path to learnbuddy.yaml")
+    watch.add_argument("--env-file", help="optional KEY=VALUE file for Telegram env vars")
+    watch.add_argument("--state-file", help="optional watcher offset state file")
+    watch.add_argument("--no-feedback", action="store_true", help="do not send child feedback")
+    watch.add_argument("--no-parent-notify", action="store_true", help="do not notify parent of the answer result")
+    watch.set_defaults(func=cmd_watch_telegram_answers)
     return parser
 
 

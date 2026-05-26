@@ -96,6 +96,7 @@ learnbuddy next --config ./learnbuddy.yaml --deliver
 learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy status --config ./learnbuddy.yaml
 learnbuddy help-request --config ./learnbuddy.yaml --reason "Learner needs a parent hint." --notify
+learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnbuddy.env
 learnbuddy report --config ./learnbuddy.yaml --notify
 learnbuddy backup --config ./learnbuddy.yaml --output ./learnbuddy-backup.zip
 learnbuddy restore --archive ./learnbuddy-backup.zip --data-dir ./restored-learnbuddy-data

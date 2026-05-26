@@ -91,6 +91,7 @@ learnbuddy next --config ./learnbuddy.yaml --deliver
 learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy status --config ./learnbuddy.yaml
 learnbuddy help-request --config ./learnbuddy.yaml --reason "Learner needs a parent hint." --notify
+learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnbuddy.env
 learnbuddy report --config ./learnbuddy.yaml --notify
 learnbuddy backup --config ./learnbuddy.yaml --output ./learnbuddy-backup.zip
 learnbuddy restore --archive ./learnbuddy-backup.zip --data-dir ./restored-learnbuddy-data
@@ -186,10 +187,11 @@ Run:
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy next --config ./learnbuddy.yaml --deliver
+learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnbuddy.env
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 
-`doctor` reports missing variable names, not secret values.
+`doctor` reports missing variable names, not secret values. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification.
 
 ## 9. VPS notes
 
