@@ -62,6 +62,20 @@ def test_public_alpha_docs_are_not_stub_placeholders() -> None:
             assert phrase not in text
 
 
+def test_telegram_quickstart_documents_child_control_messages() -> None:
+    text = read_repo_file("docs/quickstart-telegram.md")
+    required_snippets = [
+        "Child control messages",
+        "Nochmal",
+        "Ich weiß nicht",
+        "parent-help request",
+        "without incrementing attempts",
+    ]
+    assert_public_safe_text(text)
+    for snippet in required_snippets:
+        assert snippet in text
+
+
 def test_demo_exercise_fixture_is_valid_and_public_safe() -> None:
     fixture = ROOT / "examples" / "exercises" / "de" / "grade-5-mixed.jsonl"
     lines = [line for line in fixture.read_text(encoding="utf-8").splitlines() if line.strip()]

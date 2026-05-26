@@ -87,6 +87,7 @@ Expected behavior:
 - `deliver-pending` repairs/resends the current pending prompt if the learner never saw it.
 - `report --notify` sends a parent summary through the parent adapter when configured.
 - `watch-telegram-answers` evaluates Kids-bot replies; when there is no answer it repairs any undelivered pending prompt, and after a correct/exhausted answer it promotes and delivers the next queued exercise automatically.
+- Child control messages are handled before answer evaluation: `Nochmal`/`nochmal senden` resends the pending prompt without incrementing attempts; `Hilfe`/`Ich weiß nicht` records a bounded parent-help request, confirms this to the child, and notifies parents when parent notifications are enabled.
 - Missing or invalid Telegram configuration returns a safe error/not-configured status rather than leaking credentials.
 
 ## Safety checklist

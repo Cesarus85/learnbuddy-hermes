@@ -17,6 +17,7 @@ import urllib.request
 
 from .config import LearnBuddyConfig
 from .delivery import DeliveryMessage, delivery_adapter_from_config
+from .notifier import ParentNotifier
 from .runtime import LearnBuddyRuntime
 
 Transport = Callable[[str, dict[str, Any]], dict[str, Any]]
@@ -104,6 +105,24 @@ def process_child_telegram_answers(
 
     message = candidate["message"]
     answer_text = str(message.get("text") or "").strip()
+    child_command = _classify_child_control_message(answer_text)
+    if child_command:
+        command_result = _handle_child_control_message(
+            config,
+            runtime,
+            pending,
+            answer_text=answer_text,
+            command=child_command,
+            send_feedback=send_feedback,
+            notify_parent=notify_parent,
+        )
+        _advance_offset(watch_state_path, watch_state, updates, minimum_next=int(candidate["update_id"]) + 1)
+        return {
+            "status": "child_command",
+            "update_id": candidate["update_id"],
+            "message_id": message.get("message_id"),
+            **command_result,
+        }
     result = runtime.submit_answer(answer_text, input_mode="text")
     promoted_session = result.get("promoted_session") if isinstance(result.get("promoted_session"), dict) else None
     child_delivery = None
@@ -180,6 +199,102 @@ def _deliver_pending_child_prompt_if_needed(config: LearnBuddyConfig, runtime: L
     runtime.mark_pending_delivery(result)
     return result
 
+
+def _with_metadata(delivery: dict[str, Any] | None, metadata: dict[str, Any]) -> dict[str, Any] | None:
+    if delivery is None:
+        return None
+    result = dict(delivery)
+    result["metadata"] = metadata
+    return result
+
+
+def _classify_child_control_message(text: str) -> str | None:
+    normalized = " ".join(text.lower().replace("ß", "ss").strip(" .!?¡¿:;,-_\n\t").split())
+    if not normalized:
+        return None
+    repeat_phrases = {
+        "nochmal",
+        "noch mal",
+        "nochmal bitte",
+        "noch mal bitte",
+        "bitte nochmal",
+        "bitte noch mal",
+        "nochmal senden",
+        "noch mal senden",
+        "wiederholen",
+        "bitte wiederholen",
+        "zeige nochmal",
+        "zeig nochmal",
+        "aufgabe nochmal",
+    }
+    help_phrases = {
+        "hilfe",
+        "hilf mir",
+        "ich brauche hilfe",
+        "ich brauch hilfe",
+        "ich weiss nicht",
+        "weiss nicht",
+        "ich weiss es nicht",
+        "keine ahnung",
+        "ich komme nicht weiter",
+        "ich verstehe es nicht",
+    }
+    if normalized in repeat_phrases:
+        return "repeat"
+    if normalized in help_phrases:
+        return "help"
+    return None
+
+
+def _handle_child_control_message(
+    config: LearnBuddyConfig,
+    runtime: LearnBuddyRuntime,
+    pending: dict[str, Any],
+    *,
+    answer_text: str,
+    command: str,
+    send_feedback: bool,
+    notify_parent: bool,
+) -> dict[str, Any]:
+    if command == "repeat":
+        metadata = {"kind": "pending_exercise_repeat", "session_id": pending.get("id")}
+        child_delivery = None
+        if send_feedback:
+            child_delivery = _with_metadata(
+                delivery_adapter_from_config(config, recipient="child").deliver_child(
+                    DeliveryMessage(text=f"Hier ist die Aufgabe nochmal:\n{pending.get('prompt')}", metadata=metadata)
+                ).to_dict(),
+                metadata,
+            )
+            if child_delivery is not None:
+                runtime.mark_pending_delivery(child_delivery)
+        return {"command": "repeat", "child_delivery": child_delivery, "parent_delivery": None}
+
+    if command == "help":
+        reason = f"{config.child_name} bittet per Telegram um Hilfe: {answer_text}. Offene Aufgabe: {pending.get('prompt')}"
+        help_request = runtime.create_parent_help_request(
+            reason,
+            subject=str(pending.get("subject") or "general"),
+            requested_by="child",
+        )
+        child_metadata = {"kind": "child_help_ack", "session_id": pending.get("id"), "help_request_id": help_request.get("id")}
+        child_delivery = None
+        if send_feedback:
+            child_delivery = _with_metadata(
+                delivery_adapter_from_config(config, recipient="child").deliver_child(
+                    DeliveryMessage(
+                        text="Ich habe deinen Eltern Bescheid gesagt. Die Aufgabe bleibt offen — du kannst später weiter antworten.",
+                        metadata=child_metadata,
+                    )
+                ).to_dict(),
+                child_metadata,
+            )
+        parent_delivery = None
+        if notify_parent:
+            parent_delivery = ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_help_request(help_request).to_dict()
+        return {"command": "help", "help_request": help_request, "child_delivery": child_delivery, "parent_delivery": parent_delivery}
+
+    return {"command": command, "child_delivery": None, "parent_delivery": None}
 
 def _find_answer_update(updates: list[Any], *, allowed_chat_id: str, pending_since: datetime | None) -> dict[str, Any] | None:
     for update in updates:
