@@ -1,5 +1,5 @@
 name: learnbuddy-learning
-version: 0.1.0-alpha.11
+version: 0.1.0-alpha.12
 description: "Safe bounded learning tools for family LearnBuddy parent and child profiles."
 author: LearnBuddy contributors
 provides_tools:
@@ -15,4 +15,6 @@ provides_tools:
   - learnbuddy_parent_help_request
   - learnbuddy_child_submit_answer
   - learnbuddy_child_status
+  - learnbuddy_child_repeat_pending
+  - learnbuddy_child_request_next_exercise
   - learnbuddy_child_request_parent_help

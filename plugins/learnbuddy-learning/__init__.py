@@ -16,9 +16,10 @@ from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
 from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
+from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.11"
+PLUGIN_VERSION = "0.1.0-alpha.12"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -174,6 +175,21 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "learnbuddy_child_status": {
         "type": "object",
         "properties": COMMON_PROPERTIES,
+        "additionalProperties": False,
+    },
+    "learnbuddy_child_repeat_pending": {
+        "type": "object",
+        "properties": COMMON_PROPERTIES,
+        "additionalProperties": False,
+    },
+    "learnbuddy_child_request_next_exercise": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "request": {"type": "string", "default": "Noch eine", "description": "Original child text asking for another exercise."},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for policy-bound tests."},
+            "notify_parent": {"type": "boolean", "default": True, "description": "Notify the configured parent adapter if policy/storage blocks the request."},
+        },
         "additionalProperties": False,
     },
     "learnbuddy_child_request_parent_help": {
@@ -454,6 +470,65 @@ def learnbuddy_child_status(args: dict[str, Any] | None = None) -> str:
     return learnbuddy_learning_status(args)
 
 
+def learnbuddy_child_repeat_pending(args: dict[str, Any] | None = None) -> str:
+    """Child profile: resend the current pending prompt without incrementing attempts."""
+    child_args = dict(args or {})
+    config = _config(child_args)
+    runtime = _runtime(child_args)
+    pending = runtime.status().get("pending")
+    if not isinstance(pending, dict):
+        return _json({"command": "repeat", "status": "no_pending", "child_delivery": None})
+    metadata = {"kind": "pending_exercise_repeat", "session_id": pending.get("id")}
+    text = f"Hier ist die Aufgabe nochmal:\n{pending.get('prompt')}"
+    child_delivery = _with_metadata(
+        _delivery_adapter(config, recipient="child").deliver_child(DeliveryMessage(text=text, metadata=metadata)).to_dict(),
+        metadata,
+        text=text,
+    )
+    if child_delivery is not None:
+        runtime.mark_pending_delivery(child_delivery)
+    return _json({
+        "command": "repeat",
+        "status": "sent" if _delivery_succeeded(child_delivery.get("status") if child_delivery else None) else (child_delivery or {}).get("status", "error"),
+        "child_delivery": child_delivery,
+    })
+
+
+def learnbuddy_child_request_next_exercise(args: dict[str, Any] | None = None) -> str:
+    """Child profile: policy-bound request for exactly one next exercise."""
+    child_args = dict(args or {})
+    config = _config(child_args)
+    runtime = _runtime(child_args)
+    pending = runtime.status().get("pending")
+    if isinstance(pending, dict):
+        metadata = {"kind": "finish_pending_first", "session_id": pending.get("id")}
+        text = f"Erst diese Aufgabe lösen, dann gibt’s die nächste:\n{pending.get('prompt')}"
+        child_delivery = _with_metadata(
+            _delivery_adapter(config, recipient="child").deliver_child(DeliveryMessage(text=text, metadata=metadata)).to_dict(),
+            metadata,
+            text=text,
+        )
+        return _json({
+            "command": "next",
+            "dispatch": {"status": "pending_exists", "pending": pending},
+            "child_delivery": child_delivery,
+            "parent_delivery": None,
+        })
+
+    dispatch, child_delivery, help_request, parent_delivery = _dispatch_child_requested_next_exercise(
+        config,
+        runtime,
+        answer_text=str(child_args.get("request") or "Noch eine"),
+        send_feedback=True,
+        notify_parent=bool(child_args.get("notify_parent", True)),
+        now=child_args.get("now"),
+    )
+    result: dict[str, Any] = {"command": "next", "dispatch": dispatch, "child_delivery": child_delivery, "parent_delivery": parent_delivery}
+    if help_request is not None:
+        result["help_request"] = help_request
+    return _json(result)
+
+
 def learnbuddy_child_request_parent_help(args: dict[str, Any] | None = None) -> str:
     """Child-profile alias: request parent help and notify the parent adapter."""
     child_args = dict(args or {})
@@ -476,6 +551,8 @@ TOOLS = [
     ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "learnbuddy_learning", "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
     ("learnbuddy_child_submit_answer", learnbuddy_child_submit_answer, "learnbuddy_child", "Child profile: submit an answer for the current LearnBuddy exercise. No file, terminal, or generic messaging access."),
     ("learnbuddy_child_status", learnbuddy_child_status, "learnbuddy_child", "Child profile: check whether a LearnBuddy exercise is pending."),
+    ("learnbuddy_child_repeat_pending", learnbuddy_child_repeat_pending, "learnbuddy_child", "Child profile: resend the pending prompt without incrementing attempts."),
+    ("learnbuddy_child_request_next_exercise", learnbuddy_child_request_next_exercise, "learnbuddy_child", "Child profile: policy-bound request for exactly one next exercise; respects pending state, allowed hours, and daily limits."),
     ("learnbuddy_child_request_parent_help", learnbuddy_child_request_parent_help, "learnbuddy_child", "Child profile: ask the configured parent for learning help. Use only for learning support, not external actions."),
 ]
 

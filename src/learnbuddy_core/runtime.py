@@ -338,14 +338,24 @@ class LearnBuddyRuntime:
 
     def _choose_exercise(self, *, exercise_id: str | None = None, subject: str | None = None) -> dict[str, Any]:
         exercises = self.exercises()
+        completed = self._completed_exercise_ids() if exercise_id is None else set()
         for exercise in exercises:
             if exercise_id and exercise.get("id") == exercise_id:
                 return exercise
-            if exercise_id is None and (subject is None or exercise.get("subject") == subject):
+            if exercise_id is None and exercise.get("id") not in completed and (subject is None or exercise.get("subject") == subject):
                 return exercise
         if exercise_id:
             raise KeyError(f"unknown exercise_id: {exercise_id}")
         raise KeyError("no matching exercise")
+
+    def _completed_exercise_ids(self) -> set[str]:
+        completed: set[str] = set()
+        for row in _read_jsonl(self.paths.answers):
+            if row.get("result") in {"correct", "exhausted"} or row.get("correct") is True or row.get("exhausted") is True:
+                exercise_id = row.get("exercise_id")
+                if exercise_id:
+                    completed.add(str(exercise_id))
+        return completed
 
     def _exercise_by_id(self, exercise_id: str) -> dict[str, Any]:
         return self._choose_exercise(exercise_id=exercise_id)

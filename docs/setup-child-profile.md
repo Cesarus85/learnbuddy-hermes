@@ -27,7 +27,7 @@ Core rule: the child profile may gain learning features, never household/admin p
 
 The shipped presets are the public capability levels and are deliberately conservative:
 
-- `locked` — only `learnbuddy_child`; answer pending exercises, check status, request parent help.
+- `locked` — only `learnbuddy_child`; answer pending exercises, repeat the current prompt, request one policy-bound next exercise, check status, request parent help.
 - `guided` — `learnbuddy_child`, `tts`, `vision`; good default for younger children who may send voice notes or worksheet photos.
 - `curious` — guided plus narrow `search`; allows supervised learning research without file/terminal/system access.
 - `teen-supervised` — curious plus `skills`, `delegation`, and `cronjob` for supervised learning organization. Parents should review this level before use.
@@ -67,6 +67,8 @@ Expose `learnbuddy_child` plus the optional toolsets for the chosen capability l
 
 - `learnbuddy_child_submit_answer` — answer the current pending exercise
 - `learnbuddy_child_status` — check whether an exercise is pending
+- `learnbuddy_child_repeat_pending` — send the current pending prompt again without incrementing attempts
+- `learnbuddy_child_request_next_exercise` — open/deliver at most one next exercise through schedule policy; never invents tasks
 - `learnbuddy_child_request_parent_help` — ask the configured parent for learning help
 
 Do not expose parent/admin orchestration tools to the child profile.

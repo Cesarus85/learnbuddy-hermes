@@ -319,6 +319,8 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_parent_help_request",
         "learnbuddy_child_submit_answer",
         "learnbuddy_child_status",
+        "learnbuddy_child_repeat_pending",
+        "learnbuddy_child_request_next_exercise",
         "learnbuddy_child_request_parent_help",
     }
     create_schema = ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["parameters"]
@@ -358,6 +360,14 @@ def test_registered_tools_expose_guided_parent_command_schemas():
 
     assert ctx.tools["learnbuddy_child_submit_answer"]["toolset"] == "learnbuddy_child"
     assert ctx.tools["learnbuddy_child_status"]["toolset"] == "learnbuddy_child"
+    repeat_schema = ctx.tools["learnbuddy_child_repeat_pending"]["schema"]["parameters"]
+    child_next_schema = ctx.tools["learnbuddy_child_request_next_exercise"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_child_repeat_pending"]["toolset"] == "learnbuddy_child"
+    assert ctx.tools["learnbuddy_child_request_next_exercise"]["toolset"] == "learnbuddy_child"
+    assert repeat_schema["additionalProperties"] is False
+    assert child_next_schema["additionalProperties"] is False
+    assert child_next_schema["properties"]["notify_parent"]["default"] is True
+    assert "exactly one next exercise" in ctx.tools["learnbuddy_child_request_next_exercise"]["schema"]["description"]
     child_help_schema = ctx.tools["learnbuddy_child_request_parent_help"]["schema"]["parameters"]
     assert ctx.tools["learnbuddy_child_request_parent_help"]["toolset"] == "learnbuddy_child"
     assert child_help_schema["required"] == ["reason"]
@@ -437,6 +447,72 @@ delivery:
         "message_id": None,
         "error": None,
     }
+
+
+def test_child_profile_control_tools_repeat_and_policy_bound_next(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "child-control-tools"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Alex
+agent:
+  name: BuddyBot
+safety:
+  daily_auto_limit: 1
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    first = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "Was ist 4 + 4?",
+        "answer": "8",
+    }))
+    second = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "Was ist 5 + 5?",
+        "answer": "10",
+    }))
+    json.loads(plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": first["exercise"]["id"], "deliver": True}))
+
+    repeat = json.loads(plugin.learnbuddy_child_repeat_pending({"config_path": str(config_path)}))
+    blocked_next = json.loads(plugin.learnbuddy_child_request_next_exercise({
+        "config_path": str(config_path),
+        "request": "Noch eine Aufgabe",
+        "now": "2026-05-27T10:00:00+02:00",
+    }))
+    answer = json.loads(plugin.learnbuddy_child_submit_answer({"config_path": str(config_path), "answer": "8", "notify_parent": False}))
+    opened_next = json.loads(plugin.learnbuddy_child_request_next_exercise({
+        "config_path": str(config_path),
+        "request": "Noch eine Aufgabe",
+        "now": "2026-05-27T10:05:00+02:00",
+    }))
+
+    assert second["status"] == "created"
+    assert repeat["command"] == "repeat"
+    assert repeat["status"] == "sent"
+    assert repeat["child_delivery"]["status"] == "dry_run"
+    assert repeat["child_delivery"]["metadata"]["kind"] == "pending_exercise_repeat"
+    assert blocked_next["command"] == "next"
+    assert blocked_next["dispatch"]["status"] == "pending_exists"
+    assert blocked_next["child_delivery"]["metadata"]["kind"] == "finish_pending_first"
+    assert answer["result"] == "correct"
+    assert opened_next["command"] == "next"
+    assert opened_next["dispatch"]["status"] == "opened"
+    assert opened_next["child_delivery"]["status"] == "dry_run"
+    assert opened_next["child_delivery"]["metadata"]["kind"] == "child_requested_next_exercise"
+    status = json.loads(plugin.learnbuddy_child_status({"config_path": str(config_path)}))
+    assert status["pending"]["prompt"] == "Was ist 5 + 5?"
 
 
 def test_parent_report_can_dry_run_notify_parent(tmp_path):

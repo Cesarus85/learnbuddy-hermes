@@ -175,6 +175,10 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
         "short answer",
         "multiline text unchanged",
         "learnbuddy_child_request_parent_help",
+        "learnbuddy_child_repeat_pending",
+        "learnbuddy_child_request_next_exercise",
+        "Noch eine",
+        "Nochmal",
         "If an exercise is pending, do not free-chat",
     ]
     for snippet in required_soul_snippets:
