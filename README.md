@@ -2,7 +2,7 @@
 
 Self-hosted, parent-controlled learning practice for families, built as a Hermes Agent extension pack.
 
-> Status: `0.1.0-alpha` preparation. The core CLI, dry-run delivery, setup, doctor, backup/restore, examples, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
+> Status: `0.1.0-alpha` preparation. The current alpha scope is Telegram-first: the core CLI, dry-run delivery, setup, doctor, backup/restore, Telegram contracts, examples, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
 
 ## What this is
 
@@ -34,11 +34,24 @@ Supported design targets:
 3. Local LearnBuddy + cloud LLM: child data and orchestration stay local while model calls go to the configured provider.
 4. Advanced: VPS LearnBuddy connected to a private/local model endpoint via VPN/Tailscale.
 
+## Alpha scope
+
+Current alpha scope: Telegram-first.
+
+That means `0.1.0-alpha` is about a self-hosted Telegram learning loop:
+
+- parent/admin commands through Hermes + the `learnbuddy_learning` toolset
+- child exercises and answers through a dedicated child Telegram bot or locked-down child profile
+- local JSON/JSONL runtime state, backup/restore, doctor checks, and dry-run smokes
+- bounded parent notifications, child help/repeat/next controls, and controlled E2E staging smoke tests
+
+Web/PWA, API, and iOS are later surfaces over the same core operations. They should not bypass the Telegram-proven safety model, delivery-state semantics, answer watcher, or parent-command contracts.
+
 ## Current roadmap
 
-- `0.1`: Telegram self-hosted MVP, local CLI lifecycle, setup, doctor, backup/restore, demo fixtures
-- `0.2`: VPS/cloud-LLM setup docs and hardening
-- `0.3`: Parent dashboard / PWA
+- `0.1`: Telegram-first self-hosted MVP, local CLI lifecycle, setup, doctor, backup/restore, demo fixtures, controlled E2E smoke
+- `0.2`: VPS/cloud-LLM setup docs and hardening for the Telegram MVP
+- `0.3`: Parent dashboard / PWA as a second surface over the tested core
 - `0.4`: multiple children and parent devices
 - `0.5`: iOS companion app
 

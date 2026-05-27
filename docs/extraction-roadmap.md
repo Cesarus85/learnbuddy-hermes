@@ -12,6 +12,18 @@ No private child data, chat IDs, raw answers, parent names, or production creden
 - Use tests and fixtures with neutral names and synthetic data.
 - Run a privacy/secret scan before every public-facing milestone.
 
+## Telegram-first alpha scope
+
+The public 0.1 alpha is Telegram-first. The critical path is:
+
+1. local dry-run CLI lifecycle
+2. parent/admin Hermes tool contracts
+3. child Telegram delivery and answer watching
+4. parent Telegram reporting/help notifications
+5. controlled E2E smoke tests with synthetic state and no required live child/parent messages
+
+Dashboard, Web/PWA, generic API, and iOS stay out of the 0.1 alpha critical path. They are later surfaces over the same bounded operations once Telegram delivery, pending-state repair, child controls, and parent command contracts are boringly reliable.
+
 ## Production behavior areas to extract
 
 | Production behavior | Generic LearnBuddy target |

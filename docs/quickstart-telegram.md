@@ -2,6 +2,8 @@
 
 This guide connects LearnBuddy to Telegram without storing credentials in git.
 
+Telegram is the current alpha product surface. The 0.1 alpha should prove the parent command contracts, child delivery state, answer watcher, help/repeat/next controls, and parent notifications here first. Web/PWA, API, and iOS clients are later surfaces over the same LearnBuddy core, not parallel alpha targets.
+
 For a network-free first run, start with [`demo-flow.md`](demo-flow.md). Telegram should be enabled only after the local `dry_run` lifecycle is green.
 
 ## 1. Install and run the dry-run setup

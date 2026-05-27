@@ -22,7 +22,7 @@ No live child or parent Telegram message is required for the default smoke. Use 
 
 - Use an isolated runtime directory such as `/tmp/learnbuddy-e2e-*`.
 - Use synthetic child names such as `Learner`.
-- Do not use production Sophia/Vision data.
+- Do not use production private child-learning data.
 - Do not write tokens or chat IDs into config files or logs.
 - For the controlled smoke, use `delivery_mode: dry_run`.
 - If testing the watcher path, provide fake `getUpdates` transport in a Python harness instead of polling real Telegram.

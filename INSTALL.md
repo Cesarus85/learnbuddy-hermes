@@ -7,6 +7,8 @@ This guide is written for a technical parent or an operator running a fresh loca
 
 The default path sends nothing to Telegram and uses no child production data. Keep `delivery.mode: dry_run` until the local smoke test is green.
 
+Alpha install path is Telegram-first. Install Hermes, run the local dry-run lifecycle, then enable the Telegram child/parent adapters deliberately. Do not start with Web/PWA, generic API, or iOS work for the 0.1 alpha; those are later surfaces over the same bounded core after the Telegram path is proven.
+
 ## Requirements
 
 - Linux, macOS, or WSL with Python 3.11+

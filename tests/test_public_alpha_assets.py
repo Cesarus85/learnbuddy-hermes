@@ -110,6 +110,37 @@ def test_telegram_e2e_smoke_runbook_documents_controlled_flow() -> None:
         assert snippet in text
 
 
+def test_public_alpha_scope_is_telegram_first_and_defers_web_api_app() -> None:
+    expectations = {
+        "README.md": [
+            "Current alpha scope: Telegram-first",
+            "Web/PWA, API, and iOS are later surfaces over the same core operations",
+        ],
+        "INSTALL.md": [
+            "Alpha install path is Telegram-first",
+            "Do not start with Web/PWA, generic API, or iOS work for the 0.1 alpha",
+        ],
+        "docs/quickstart-telegram.md": [
+            "Telegram is the current alpha product surface",
+            "Web/PWA, API, and iOS clients are later surfaces",
+        ],
+        "docs/extraction-roadmap.md": [
+            "Telegram-first alpha scope",
+            "Dashboard, Web/PWA, generic API, and iOS stay out of the 0.1 alpha critical path",
+        ],
+        "docs/ios-roadmap.md": [
+            "iOS is not part of the 0.1 alpha",
+            "Web/PWA, API, and iOS are later surfaces over the Telegram-proven core",
+        ],
+    }
+
+    for relative_path, snippets in expectations.items():
+        text = read_repo_file(relative_path)
+        assert_public_safe_text(text)
+        for snippet in snippets:
+            assert snippet in text
+
+
 def test_demo_exercise_fixture_is_valid_and_public_safe() -> None:
     fixture = ROOT / "examples" / "exercises" / "de" / "grade-5-mixed.jsonl"
     lines = [line for line in fixture.read_text(encoding="utf-8").splitlines() if line.strip()]
