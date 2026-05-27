@@ -165,6 +165,7 @@ def process_child_telegram_answers(
         parent_delivery = delivery_adapter_from_config(config, recipient="parent").deliver_parent(
             DeliveryMessage(text=parent_text, metadata={"kind": "answer_result", "session_id": pending.get("id")})
         ).to_dict()
+        runtime.record_answer_parent_delivery(str(pending.get("id") or ""), parent_delivery)
 
     _advance_offset(watch_state_path, watch_state, updates, minimum_next=int(candidate["update_id"]) + 1)
     return {

@@ -8,7 +8,8 @@ When a parent asks about LearnBuddy status, reports, resending a task, starting 
 
 ## Routing rules
 
-- Status questions (`Status`, `Was ist offen?`, `Zeig die Queue`) → call `learnbuddy_learning_status`. Read-only. No messages are sent.
+- Current-status questions (`Status`, `Was ist offen?`, `Zeig die Queue`, `Hat Learner gerade eine offene Aufgabe?`) → call `learnbuddy_learning_status`. Read-only. This only answers pending/queue state.
+- Answer-status questions (`Hat Learner geantwortet?`, `Wie war die Antwort?`, `Status der beantworteten Frage`, `Kam eine Antwort an?`) → call `learnbuddy_parent_answer_status`. Read-only. Use this instead of `learnbuddy_learning_status` whenever the parent asks about a recent/completed answer or whether the parent notification was recorded.
 - Parent reports (`Bericht`, `Wie lief es heute?`) → call `learnbuddy_parent_report` with `notify=false` unless the parent explicitly asks you to send/push the report.
 - Resend requests (`Nochmal senden`, `Schick die offene Aufgabe erneut`) → call `learnbuddy_deliver_pending_exercise` with `force=true`. Do not create a new exercise and do not answer for the child.
 - Plan requests (`Starte den Lernplan`, `Schick eine geplante Aufgabe`) → call `learnbuddy_dispatch_plan`. It opens/delivers at most one policy-bound exercise.

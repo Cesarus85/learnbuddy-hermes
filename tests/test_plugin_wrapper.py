@@ -66,6 +66,49 @@ delivery:
     assert result["parent_delivery"]["target"] == "parent"
 
 
+def test_parent_answer_status_reports_recent_completed_answer_and_parent_delivery(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "parent-answer-status"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+child:
+  display_name: Alex
+agent:
+  name: BuddyBot
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "Was ist 7 + 4?",
+        "answer": "11",
+    }))
+    plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": queued["exercise"]["id"]})
+    answer = json.loads(plugin.learnbuddy_child_submit_answer({"config_path": str(config_path), "answer": "11"}))
+
+    status = json.loads(plugin.learnbuddy_parent_answer_status({"config_path": str(config_path)}))
+
+    assert answer["result"] == "correct"
+    assert status["status"] == "ok"
+    assert status["pending"] is None
+    assert status["answers"] == 1
+    latest = status["latest_answer"]
+    assert latest["prompt"] == "Was ist 7 + 4?"
+    assert latest["answer"] == "11"
+    assert latest["result"] == "correct"
+    assert latest["correct"] is True
+    assert latest["attempts"] == 1
+    assert latest["parent_delivery"]["status"] == "dry_run"
+    assert "Alex hat geantwortet" in status["text"]
+    assert "Was ist 7 + 4?" in status["text"]
+
+
 def test_plugin_accepts_config_file_for_child_and_agent_identity(tmp_path):
     plugin = load_plugin()
     data_dir = tmp_path / "configured-data"
@@ -315,6 +358,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_parent_command_contracts",
         "learnbuddy_submit_answer",
         "learnbuddy_learning_status",
+        "learnbuddy_parent_answer_status",
         "learnbuddy_parent_report",
         "learnbuddy_parent_help_request",
         "learnbuddy_child_submit_answer",
@@ -352,6 +396,9 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert answer_schema["properties"]["input_mode"]["enum"] == ["text", "audio"]
 
     report_schema = ctx.tools["learnbuddy_parent_report"]["schema"]["parameters"]
+    answer_status_schema = ctx.tools["learnbuddy_parent_answer_status"]["schema"]["parameters"]
+    assert answer_status_schema["properties"]["limit"]["default"] == 3
+    assert "recent answer" in ctx.tools["learnbuddy_parent_answer_status"]["schema"]["description"].lower()
     assert report_schema["properties"]["notify"]["default"] is False
 
     help_schema = ctx.tools["learnbuddy_parent_help_request"]["schema"]["parameters"]
@@ -383,9 +430,12 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
 
     assert contracts["status"] == "ok"
     operations = {item["operation"]: item for item in contracts["contracts"]}
-    assert set(operations) == {"status", "report", "resend_pending", "dispatch_plan", "create_and_send_exercise"}
-    assert operations["status"]["tool"] == "learnbuddy_learning_status"
-    assert "Was ist offen?" in operations["status"]["examples"]
+    assert set(operations) == {"current_status", "answer_status", "report", "resend_pending", "dispatch_plan", "create_and_send_exercise"}
+    assert operations["current_status"]["tool"] == "learnbuddy_learning_status"
+    assert "Was ist offen?" in operations["current_status"]["examples"]
+    assert operations["answer_status"]["tool"] == "learnbuddy_parent_answer_status"
+    assert "Hat Learner geantwortet?" in operations["answer_status"]["examples"]
+    assert operations["answer_status"]["policy"].startswith("Read-only")
     assert operations["report"]["tool"] == "learnbuddy_parent_report"
     assert operations["report"]["notify_default"] is False
     assert operations["resend_pending"]["tool"] == "learnbuddy_deliver_pending_exercise"

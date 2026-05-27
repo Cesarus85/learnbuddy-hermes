@@ -74,6 +74,12 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
         handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows)
+    path.write_text(payload, encoding="utf-8")
+
+
 def _fresh_delivery_state() -> dict[str, Any]:
     return {"child": {"status": "not_attempted", "attempts": 0}}
 
@@ -226,6 +232,7 @@ class LearnBuddyRuntime:
             "expected": evaluation.canonical_answer,
             "correct": evaluation.correct,
             "attempts": evaluation.attempts,
+            "max_attempts": evaluation.max_attempts,
             "exhausted": evaluation.exhausted,
             "result": result,
             "input_mode": input_mode,
@@ -275,6 +282,122 @@ class LearnBuddyRuntime:
             "subjects": subjects,
             "text": text,
         }
+
+    def parent_answer_status(self, *, limit: int = 3) -> dict[str, Any]:
+        """Return recent answer history for parent status questions."""
+        limit = max(1, min(int(limit or 3), 20))
+        state = self._state()
+        answers = _read_jsonl(self.paths.answers)
+        recent = [self._enrich_answer_for_parent(row) for row in reversed(answers[-limit:])]
+        latest = recent[0] if recent else None
+        if latest is None:
+            text = f"{self.agent_name}: Noch keine Antwort von {self.child_name} gespeichert."
+        else:
+            result_text = self._parent_result_text(latest)
+            parent_candidate = latest.get("parent_delivery")
+            parent_delivery = parent_candidate if isinstance(parent_candidate, dict) else {}
+            delivery_status = str(parent_delivery.get("status") or "nicht protokolliert")
+            text = (
+                f"{self.agent_name}: {self.child_name} hat geantwortet.\n"
+                f"Aufgabe: {latest.get('prompt') or 'unbekannt'}\n"
+                f"Antwort: {latest.get('answer') or ''}\n"
+                f"Ergebnis: {result_text}.\n"
+                f"Eltern-Benachrichtigung: {delivery_status}."
+            )
+        return {
+            "status": "ok",
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
+            "pending": state.get("pending"),
+            "queue_length": len(state.get("queue") or []),
+            "answers": len(answers),
+            "latest_answer": latest,
+            "recent_answers": recent,
+            "text": text,
+        }
+
+    def record_answer_parent_delivery(self, session_id: str | None, delivery_result: dict[str, Any]) -> dict[str, Any] | None:
+        """Persist parent-notification delivery metadata on the matching answer row."""
+        if not session_id:
+            return None
+        rows = _read_jsonl(self.paths.answers)
+        for index in range(len(rows) - 1, -1, -1):
+            row = rows[index]
+            if str(row.get("session_id") or "") != str(session_id):
+                continue
+            raw_delivery = row.get("delivery")
+            delivery = raw_delivery if isinstance(raw_delivery, dict) else {}
+            delivery["parent"] = {
+                "status": delivery_result.get("status"),
+                "adapter": delivery_result.get("adapter"),
+                "target": delivery_result.get("target"),
+                "message_id": delivery_result.get("message_id"),
+                "error": delivery_result.get("error"),
+                "attempted_at": _now(),
+            }
+            row["delivery"] = delivery
+            rows[index] = row
+            _write_jsonl(self.paths.answers, rows)
+            return row
+        return None
+
+    def _enrich_answer_for_parent(self, row: dict[str, Any]) -> dict[str, Any]:
+        enriched = dict(row)
+        exercise = self._exercise_by_id_or_none(str(row.get("exercise_id") or ""))
+        session = self._session_by_id(str(row.get("session_id") or ""))
+        if exercise:
+            enriched["prompt"] = exercise.get("prompt")
+            enriched["exercise"] = exercise
+        elif session:
+            enriched["prompt"] = session.get("prompt")
+        else:
+            enriched.setdefault("prompt", None)
+        if session:
+            enriched["session"] = session
+        enriched.setdefault("max_attempts", self.max_attempts)
+        raw_delivery = enriched.get("delivery")
+        delivery = raw_delivery if isinstance(raw_delivery, dict) else {}
+        raw_parent_delivery = delivery.get("parent")
+        parent_delivery = raw_parent_delivery if isinstance(raw_parent_delivery, dict) else {"status": "not_recorded"}
+        enriched["parent_delivery"] = parent_delivery
+        return enriched
+
+    def _parent_result_text(self, answer: dict[str, Any]) -> str:
+        if answer.get("correct") is True:
+            base = "richtig"
+        elif answer.get("result") == "exhausted" or answer.get("exhausted") is True:
+            base = "alle Versuche aufgebraucht"
+        else:
+            base = "noch nicht richtig"
+        attempts = answer.get("attempts")
+        max_attempts = answer.get("max_attempts") or self.max_attempts
+        if attempts:
+            return f"{base}, Versuch {attempts}/{max_attempts}"
+        return base
+
+    def _exercise_by_id_or_none(self, exercise_id: str) -> dict[str, Any] | None:
+        if not exercise_id:
+            return None
+        try:
+            return self._exercise_by_id(exercise_id)
+        except KeyError:
+            return None
+
+    def _session_by_id(self, session_id: str) -> dict[str, Any] | None:
+        if not session_id:
+            return None
+        state = self._state()
+        pending = state.get("pending")
+        if isinstance(pending, dict) and str(pending.get("id") or "") == session_id:
+            return pending
+        for item in state.get("queue") or []:
+            if isinstance(item, dict) and str(item.get("id") or "") == session_id:
+                return item
+        for row in reversed(self.sessions()):
+            if str(row.get("id") or "") == session_id:
+                return row
+        return None
 
     def create_parent_help_request(
         self,

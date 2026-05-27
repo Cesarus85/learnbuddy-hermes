@@ -6,12 +6,19 @@ LearnBuddy's public alpha is Telegram-first. Web/PWA/API surfaces can be added l
 
 The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may perform admin and delivery actions, but every pushed message must be explicit and bounded. For live parent-gateway routing, install the public SOUL/contracts into the parent profile with `scripts/setup-parent-profile.sh`; the SOUL tells the agent to read `learnbuddy_parent_command_contracts` before handling LearnBuddy Telegram commands.
 
-### Status
+### Current status
 
-- Parent examples: `Status`, `Was ist offen?`, `Zeig die Queue`, `Hat Learner gerade eine Aufgabe?`
+- Parent examples: `Status`, `Was ist offen?`, `Zeig die Queue`, `Hat Learner gerade eine offene Aufgabe?`
 - Tool: `learnbuddy_learning_status`
 - Side effect: none
-- Rule: read-only; never sends Telegram messages.
+- Rule: read-only; answers only current pending/queue state. Do **not** use this for recent/completed answer questions.
+
+### Answer status
+
+- Parent examples: `Hat Learner geantwortet?`, `Wie war die Antwort?`, `Status der beantworteten Frage`, `Kam eine Antwort an?`
+- Tool: `learnbuddy_parent_answer_status`
+- Side effect: none
+- Rule: read-only; joins answer history with the original prompt and persisted parent-notification delivery metadata.
 
 ### Report
 
@@ -70,5 +77,5 @@ The semantic classifier is **opt-in** and **bounded**:
 
 - No unbounded exercise generation from vague parent text.
 - Delivery-state remains authoritative: pending alone does not prove that the child saw the prompt.
-- Parent notifications require explicit parent intent.
+- Parent-triggered pushed reports require explicit parent intent; child-answer/result notifications may be automatic when the child profile is configured to notify parents.
 - Missing Telegram configuration must report variable names only, never secret values.

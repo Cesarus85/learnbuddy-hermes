@@ -19,14 +19,20 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.13"
+PLUGIN_VERSION = "0.1.0-alpha.14"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
-        "operation": "status",
+        "operation": "current_status",
         "tool": "learnbuddy_learning_status",
-        "examples": ["Status", "Was ist offen?", "Zeig die Queue", "Hat Learner gerade eine Aufgabe?"],
-        "policy": "Read-only. Use for parent status questions; never sends Telegram messages.",
+        "examples": ["Status", "Was ist offen?", "Zeig die Queue", "Hat Learner gerade eine offene Aufgabe?"],
+        "policy": "Read-only. Use only for current pending/queue questions; it does not answer whether Learner recently replied.",
+    },
+    {
+        "operation": "answer_status",
+        "tool": "learnbuddy_parent_answer_status",
+        "examples": ["Hat Learner geantwortet?", "Wie war die Antwort?", "Status der beantworteten Frage", "Kam eine Antwort an?"],
+        "policy": "Read-only. Use for questions about recent/completed answers, including whether a parent notification was recorded.",
     },
     {
         "operation": "report",
@@ -142,6 +148,14 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "learnbuddy_learning_status": {
         "type": "object",
         "properties": COMMON_PROPERTIES,
+        "additionalProperties": False,
+    },
+    "learnbuddy_parent_answer_status": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 3, "description": "Number of recent answer records to include."},
+        },
         "additionalProperties": False,
     },
     "learnbuddy_parent_report": {
@@ -411,7 +425,8 @@ def learnbuddy_parent_command_contracts(args: dict[str, Any] | None = None) -> s
             "no_child_toolset": True,
             "no_unbounded_generation": True,
             "delivery_state_required": True,
-            "notify_requires_explicit_parent_request": True,
+            "parent_initiated_push_requires_explicit_request": True,
+            "child_answer_notifications_may_be_automatic": True,
         },
     })
 
@@ -427,6 +442,13 @@ def learnbuddy_learning_status(args: dict[str, Any] | None = None) -> str:
     """Return current pending/queue status."""
     runtime = _runtime(dict(args or {}))
     return _json(runtime.status())
+
+
+def learnbuddy_parent_answer_status(args: dict[str, Any] | None = None) -> str:
+    """Return recent answer status for parent questions about completed/recent answers."""
+    args = dict(args or {})
+    runtime = _runtime(args)
+    return _json(runtime.parent_answer_status(limit=int(args.get("limit") or 3)))
 
 
 def learnbuddy_parent_report(args: dict[str, Any] | None = None) -> str:
@@ -478,9 +500,11 @@ def learnbuddy_child_submit_answer(args: dict[str, Any] | None = None) -> str:
             f"Antwort: {answer_text}\n"
             f"Ergebnis: {status}, Versuch {attempts}/{max_attempts}."
         )
-        result["parent_delivery"] = _delivery_adapter(config, recipient="parent").deliver_parent(
+        parent_delivery = _delivery_adapter(config, recipient="parent").deliver_parent(
             DeliveryMessage(text=parent_text, metadata={"kind": "child_answer_result", "session_id": pending.get("id")})
         ).to_dict()
+        result["parent_delivery"] = parent_delivery
+        runtime.record_answer_parent_delivery(str(pending.get("id") or ""), parent_delivery)
     return _json(result)
 
 
@@ -565,7 +589,8 @@ TOOLS = [
     ("learnbuddy_dispatch_plan", learnbuddy_dispatch_plan, "learnbuddy_learning", "Scheduler-safe: open and deliver one due automatic LearnBuddy exercise when allowed-hours and daily-limit policy permit it."),
     ("learnbuddy_parent_command_contracts", learnbuddy_parent_command_contracts, "learnbuddy_learning", "Parent command contract reference for Telegram routing: status, report, resend pending, dispatch plan, and create/send exercise. Read before improvising ambiguous parent commands."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
-    ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy pending/queue status."),
+    ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy current pending/queue status only; not answer history."),
+    ("learnbuddy_parent_answer_status", learnbuddy_parent_answer_status, "learnbuddy_learning", "Show recent answer status for parents, including the latest prompt, answer result, and parent notification delivery record."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
     ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "learnbuddy_learning", "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
     ("learnbuddy_child_submit_answer", learnbuddy_child_submit_answer, "learnbuddy_child", "Child profile: submit an answer for the current LearnBuddy exercise. No file, terminal, or generic messaging access."),
