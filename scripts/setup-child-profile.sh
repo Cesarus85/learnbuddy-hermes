@@ -27,6 +27,8 @@ Options:
   --skip-install        Do not run 'python -m pip install -e .'
   -h, --help            Show this help
 
+The script writes a child-profile `SOUL.md` that routes short numeric/text answers through `learnbuddy_child_submit_answer` before free chat. Existing Telegram sessions may keep an older prompt; after changing the SOUL, restart the child gateway and start a fresh session if needed.
+
 The script does NOT write Telegram tokens or chat IDs. Put real secrets in the
 env file yourself and keep it mode 600. If your PATH has python3 but not python,
 the script auto-detects it; set PYTHON_BIN=/path/to/python for unusual systems.
@@ -69,18 +71,23 @@ if [[ -z "$PYTHON_BIN" ]]; then
   fi
 fi
 
+BASE_FORBIDDEN_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen"]'
 case "$CAPABILITY_LEVEL" in
   locked)
     TELEGRAM_TOOLSETS='["learnbuddy_child"]'
+    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","tts","vision","search","skills","delegation","cronjob"]'
     ;;
   guided)
     TELEGRAM_TOOLSETS='["learnbuddy_child","tts","vision"]'
+    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","search","skills","delegation","cronjob"]'
     ;;
   curious)
     TELEGRAM_TOOLSETS='["learnbuddy_child","tts","vision","search"]'
+    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","skills","delegation","cronjob"]'
     ;;
   teen-supervised)
     TELEGRAM_TOOLSETS='["learnbuddy_child","tts","vision","search","skills","delegation","cronjob"]'
+    DISABLED_TOOLSETS="$BASE_FORBIDDEN_TOOLSETS"
     ;;
   *)
     echo "Invalid --capability-level: $CAPABILITY_LEVEL" >&2
@@ -101,11 +108,12 @@ PROFILE_HOME="$HOME/.hermes/profiles/$PROFILE"
 PLUGIN_DIR="$PROFILE_HOME/plugins/learnbuddy-learning"
 mkdir -p "$PLUGIN_DIR"
 rsync -a --delete plugins/learnbuddy-learning/ "$PLUGIN_DIR/"
+cp templates/child-profile/SOUL.md "$PROFILE_HOME/SOUL.md"
 
 hermes --profile "$PROFILE" plugins enable learnbuddy-learning || true
 
 PROFILE_CONFIG="$PROFILE_HOME/config.yaml"
-"$PYTHON_BIN" - "$PROFILE_CONFIG" "$TELEGRAM_TOOLSETS" <<'PY'
+"$PYTHON_BIN" - "$PROFILE_CONFIG" "$TELEGRAM_TOOLSETS" "$DISABLED_TOOLSETS" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -113,6 +121,7 @@ import yaml
 
 path = Path(sys.argv[1])
 toolsets = json.loads(sys.argv[2])
+disabled_toolsets = json.loads(sys.argv[3])
 config = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
 if not isinstance(config, dict):
     config = {}
@@ -121,6 +130,16 @@ if not isinstance(platform_toolsets, dict):
     platform_toolsets = {}
     config["platform_toolsets"] = platform_toolsets
 platform_toolsets["telegram"] = toolsets
+known_plugin_toolsets = config.setdefault("known_plugin_toolsets", {})
+if not isinstance(known_plugin_toolsets, dict):
+    known_plugin_toolsets = {}
+    config["known_plugin_toolsets"] = known_plugin_toolsets
+known_plugin_toolsets["telegram"] = ["learnbuddy_child", "learnbuddy_learning"]
+agent = config.setdefault("agent", {})
+if not isinstance(agent, dict):
+    agent = {}
+    config["agent"] = agent
+agent["disabled_toolsets"] = disabled_toolsets
 path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
 PY
 

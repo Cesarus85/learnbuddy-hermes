@@ -115,9 +115,10 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
     safety = read_repo_file("docs/child-safety-model.md")
     template = read_repo_file("templates/child-profile/config-snippet.yaml")
     script = read_repo_file("scripts/setup-child-profile.sh")
+    soul = read_repo_file("templates/child-profile/SOUL.md")
     service_script = read_repo_file("scripts/install-child-gateway-service.sh")
 
-    for text in (docs, safety, template, script, service_script):
+    for text in (docs, safety, template, script, soul, service_script):
         assert_public_safe_text(text)
 
     required_doc_snippets = [
@@ -160,11 +161,24 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
         "locked|guided|curious|teen-supervised",
         "case \"$CAPABILITY_LEVEL\"",
         "PYTHON_BIN",
+        "templates/child-profile/SOUL.md",
+        "known_plugin_toolsets",
+        "disabled_toolsets",
         "hermes-gateway-${PROFILE}.service",
         "learnbuddy_child",
     ]
     for snippet in required_script_snippets:
         assert snippet in script
+
+    required_soul_snippets = [
+        "learnbuddy_child_submit_answer",
+        "short answer",
+        "multiline text unchanged",
+        "learnbuddy_child_request_parent_help",
+        "If an exercise is pending, do not free-chat",
+    ]
+    for snippet in required_soul_snippets:
+        assert snippet in soul
 
     required_service_script_snippets = [
         "--start",

@@ -205,6 +205,9 @@ class LearnBuddyRuntime:
             answer=exercise.get("answer"),
             expected_answers=exercise.get("expected_answers"),
             aliases=exercise.get("aliases"),
+            prompt=str(exercise.get("prompt") or pending.get("prompt") or ""),
+            exercise_type=str(exercise.get("type") or pending.get("type") or ""),
+            subject=str(exercise.get("subject") or pending.get("subject") or ""),
             previous_attempts=int(pending.get("attempts", 0)),
             max_attempts=self.max_attempts,
         )
@@ -226,6 +229,7 @@ class LearnBuddyRuntime:
             "exhausted": evaluation.exhausted,
             "result": result,
             "input_mode": input_mode,
+            "metadata": evaluation.metadata,
         }
         _append_jsonl(self.paths.answers, answer_row)
         promoted_session = None
@@ -242,7 +246,9 @@ class LearnBuddyRuntime:
             "max_attempts": evaluation.max_attempts,
             "exhausted": evaluation.exhausted,
             "feedback": evaluation.feedback,
+            "metadata": evaluation.metadata,
             "answer": answer_row,
+            "answer_record": answer_row,
             "promoted_session": promoted_session,
         }
 

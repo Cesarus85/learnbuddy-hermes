@@ -207,7 +207,7 @@ The parent/main profile can use the broader `learnbuddy_learning` toolset for pa
 - review capability level and audit notes
 - downgrade the child profile if needed
 
-If you prefer the conservative alpha flow, keep the child bot as a send/answer endpoint and let `learnbuddy watch-telegram-answers` process replies without a free child chat agent. For a growing LearnBuddy child agent, use the dedicated child gateway instead.
+If you prefer the conservative alpha flow, keep the child bot as a send/answer endpoint and let `learnbuddy watch-telegram-answers` process replies without a free child chat agent. For a growing LearnBuddy child agent, use the dedicated child gateway instead. Do **not** run both polling consumers against the same Telegram bot token: the watcher and the child gateway both use Telegram `getUpdates`, and two pollers on one bot can steal updates from each other or trigger Bot API conflict errors. When the child gateway is active, disable the watcher timer/service for that bot.
 
 ## 6. Verification flow
 

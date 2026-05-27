@@ -188,6 +188,25 @@ def test_runtime_parent_report_uses_synthetic_sessions_and_answers(tmp_path):
     assert "1/4 richtig" in report["text"]
 
 
+def test_runtime_grades_parent_created_multi_math_batch(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", max_attempts=3)
+    exercise = runtime.add_exercise({
+        "subject": "math",
+        "type": "short",
+        "prompt": "Rechne bitte:\n1 + 1 = ?\n10 + 10 = ?\n33 + 33 = ?",
+        "answer": "2, 20, 66",
+    })
+
+    runtime.open_exercise(exercise["id"])
+    result = runtime.submit_answer("2\n20\n66")
+
+    assert result["result"] == "correct"
+    assert result["correct"] is True
+    assert result["metadata"]["score"] == 3
+    assert result["metadata"]["total"] == 3
+    assert runtime.status()["pending"] is None
+
+
 def test_runtime_records_parent_help_requests(tmp_path):
     runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_id="kid-help", child_name="Alex", agent_name="BuddyBot")
 
