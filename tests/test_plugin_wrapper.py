@@ -327,9 +327,11 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert ctx.tools["learnbuddy_create_and_send_exercise"]["toolset"] == "learnbuddy_learning"
     assert create_schema["additionalProperties"] is False
     assert create_schema["required"] == ["prompt"]
+    assert {tuple(item["required"]) for item in create_schema["anyOf"]} == {("answer",), ("expected_answers",)}
     assert create_schema["properties"]["subject"]["enum"] == ["math", "german", "english", "general"]
     assert create_schema["properties"]["answer"]["description"].startswith("Canonical expected answer")
     assert "Do not call" in ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["description"]
+    assert "expected answer" in ctx.tools["learnbuddy_create_and_send_exercise"]["schema"]["description"]
     repair_schema = ctx.tools["learnbuddy_deliver_pending_exercise"]["schema"]["parameters"]
     assert ctx.tools["learnbuddy_deliver_pending_exercise"]["toolset"] == "learnbuddy_learning"
     assert repair_schema["additionalProperties"] is False
@@ -391,9 +393,70 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert operations["dispatch_plan"]["tool"] == "learnbuddy_dispatch_plan"
     assert operations["dispatch_plan"]["policy_bounded"] is True
     assert operations["create_and_send_exercise"]["tool"] == "learnbuddy_create_and_send_exercise"
-    assert operations["create_and_send_exercise"]["requires"] == ["prompt", "answer"]
+    assert operations["create_and_send_exercise"]["requires"] == ["prompt", "answer_or_expected_answers"]
+    assert "Frage Learner folgende Aufgaben" in operations["create_and_send_exercise"]["examples"]
     assert contracts["safety"]["no_child_toolset"] is True
     assert contracts["safety"]["no_unbounded_generation"] is True
+
+
+def test_create_and_send_requires_expected_answer_before_delivery(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "missing-answer"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = json.loads(plugin.learnbuddy_create_and_send_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "1 + 1 =?\n10 + 10 = ?\n33 + 33 = ?",
+    }))
+    status = json.loads(plugin.learnbuddy_learning_status({"config_path": str(config_path)}))
+
+    assert result["status"] == "missing_expected_answer"
+    assert "answer" in result["error"]
+    assert status["pending"] is None
+    assert status["queue"] == []
+
+
+def test_create_and_send_multi_part_exercise_with_expected_answers_round_trips(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "multi-parent-send"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    sent = json.loads(plugin.learnbuddy_create_and_send_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "1 + 1 =?\n10 + 10 = ?\n33 + 33 = ?",
+        "expected_answers": ["2", "20", "66"],
+    }))
+    answer = json.loads(plugin.learnbuddy_child_submit_answer({
+        "config_path": str(config_path),
+        "answer": "2\n20\n66",
+    }))
+
+    assert sent["status"] == "sent"
+    assert sent["opened"]["delivery_status"] == "sent"
+    assert answer["result"] == "correct"
+    assert answer["feedback"] == "Richtig! Alle Teilaufgaben stimmen 🎉"
+    assert answer["metadata"]["score"] == 3
+    assert answer["metadata"]["total"] == 3
 
 
 def test_child_profile_aliases_are_narrow_and_parent_help_notifies(tmp_path):

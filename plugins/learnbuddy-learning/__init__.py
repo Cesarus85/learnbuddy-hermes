@@ -19,7 +19,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.12"
+PLUGIN_VERSION = "0.1.0-alpha.13"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -52,9 +52,13 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
         "operation": "create_and_send_exercise",
         "tool": "learnbuddy_create_and_send_exercise",
-        "examples": ["Schick Learner: Was ist 100 + 101?", "Gib Learner eine Matheaufgabe mit Antwort 201"],
-        "requires": ["prompt", "answer"],
-        "policy": "Use only when the parent provides or approves a concrete child-facing prompt and expected answer.",
+        "examples": [
+            "Schick Learner: Was ist 100 + 101?",
+            "Gib Learner eine Matheaufgabe mit Antwort 201",
+            "Frage Learner folgende Aufgaben",
+        ],
+        "requires": ["prompt", "answer_or_expected_answers"],
+        "policy": "Use only when the parent provides or the agent deterministically verifies a concrete child-facing prompt plus expected answer(s) before sending.",
     },
 ]
 
@@ -99,6 +103,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {**EXERCISE_PROPERTIES, "deliver": {"type": "boolean", "default": True}},
         "required": ["prompt"],
+        "anyOf": [{"required": ["answer"]}, {"required": ["expected_answers"]}],
         "additionalProperties": False,
     },
     "learnbuddy_deliver_pending_exercise": {
@@ -368,9 +373,23 @@ def learnbuddy_dispatch_plan(args: dict[str, Any] | None = None) -> str:
     return _json(result)
 
 
+def _has_expected_answer(args: dict[str, Any]) -> bool:
+    if args.get("answer") not in (None, ""):
+        return True
+    expected = args.get("expected_answers")
+    if isinstance(expected, list):
+        return any(str(item).strip() for item in expected if item is not None)
+    return False
+
+
 def learnbuddy_create_and_send_exercise(args: dict[str, Any] | None = None) -> str:
     """Create an exercise, open it immediately, and deliver it to the child adapter."""
     args = dict(args or {})
+    if not _has_expected_answer(args):
+        return _json({
+            "status": "missing_expected_answer",
+            "error": "learnbuddy_create_and_send_exercise requires answer or expected_answers before sending a child-facing exercise.",
+        })
     queued = json.loads(learnbuddy_queue_exercise(args))
     exercise = queued["exercise"]
     next_args = dict(args)
@@ -541,7 +560,7 @@ def learnbuddy_child_request_parent_help(args: dict[str, Any] | None = None) -> 
 TOOLS = [
     ("learnbuddy_queue_exercise", learnbuddy_queue_exercise, "learnbuddy_learning", "Create a bounded LearnBuddy exercise for later use. Parent UX: use this only when the parent explicitly asks to queue, not send."),
     ("learnbuddy_next_exercise", learnbuddy_next_exercise, "learnbuddy_learning", "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
-    ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "learnbuddy_learning", "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer."),
+    ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "learnbuddy_learning", "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer(s)."),
     ("learnbuddy_deliver_pending_exercise", learnbuddy_deliver_pending_exercise, "learnbuddy_learning", "Repair or resend the current pending prompt to the child. Use when a parent reports that the learner did not receive the task."),
     ("learnbuddy_dispatch_plan", learnbuddy_dispatch_plan, "learnbuddy_learning", "Scheduler-safe: open and deliver one due automatic LearnBuddy exercise when allowed-hours and daily-limit policy permit it."),
     ("learnbuddy_parent_command_contracts", learnbuddy_parent_command_contracts, "learnbuddy_learning", "Parent command contract reference for Telegram routing: status, report, resend pending, dispatch plan, and create/send exercise. Read before improvising ambiguous parent commands."),

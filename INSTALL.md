@@ -135,6 +135,17 @@ hermes config set platform_toolsets.telegram '["hermes-telegram","learnbuddy_lea
 hermes plugins list
 ```
 
+Live parent-gateway hardening path (recommended for Telegram alpha):
+
+```bash
+scripts/setup-parent-profile.sh \
+  --profile learnbuddy-parent \
+  --config ./learnbuddy.yaml \
+  --env-file ./learnbuddy.env
+```
+
+That writes `templates/parent-profile/SOUL.md`, installs the `learnbuddy-learning` plugin, locks Telegram routing to `learnbuddy_learning`, records `learnbuddy_child` as a known-but-not-exposed plugin toolset, and gives the agent explicit instructions to call `learnbuddy_parent_command_contracts` before handling LearnBuddy parent commands. `learnbuddy_create_and_send_exercise` requires a concrete prompt plus `answer_or_expected_answers`; multi-part arithmetic prompts such as `Frage Learner folgende Aufgaben` must pass ordered `expected_answers` before anything is sent to the child.
+
 For unattended gateway use, set defaults in the profile environment instead of relying on the model to pass paths on every tool call:
 
 ```text

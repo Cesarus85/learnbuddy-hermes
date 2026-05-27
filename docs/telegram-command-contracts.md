@@ -4,7 +4,7 @@ LearnBuddy's public alpha is Telegram-first. Web/PWA/API surfaces can be added l
 
 ## Parent Telegram command contracts
 
-The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may perform admin and delivery actions, but every pushed message must be explicit and bounded.
+The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may perform admin and delivery actions, but every pushed message must be explicit and bounded. For live parent-gateway routing, install the public SOUL/contracts into the parent profile with `scripts/setup-parent-profile.sh`; the SOUL tells the agent to read `learnbuddy_parent_command_contracts` before handling LearnBuddy Telegram commands.
 
 ### Status
 
@@ -37,8 +37,9 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 
 - Parent examples: `Schick Learner: Was ist 100 + 101?`, `Gib Learner eine Matheaufgabe mit Antwort 201`
 - Tool: `learnbuddy_create_and_send_exercise`
-- Required args: `prompt`, `answer`
-- Rule: use only when the parent provides or approves a concrete child-facing prompt and expected answer.
+- Required args: `prompt`, plus `answer_or_expected_answers` (`answer` or ordered `expected_answers`)
+- Parent examples include multi-part prompts such as `Frage Learner folgende Aufgaben`; calculate or verify the expected answers first, then pass them as ordered `expected_answers`.
+- Rule: use only when the parent provides or the agent deterministically verifies a concrete child-facing prompt and expected answer(s). The tool refuses to send without an expected answer.
 
 ## Child boundary
 

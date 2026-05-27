@@ -71,11 +71,49 @@ def test_public_docs_include_telegram_parent_command_contracts() -> None:
         "learnbuddy_deliver_pending_exercise",
         "learnbuddy_dispatch_plan",
         "learnbuddy_create_and_send_exercise",
+        "answer_or_expected_answers",
+        "Frage Learner folgende Aufgaben",
+        "scripts/setup-parent-profile.sh",
         "Web/PWA",
     ]
     assert_public_safe_text(text)
     for snippet in required_snippets:
         assert snippet in text
+
+
+def test_parent_profile_assets_support_live_command_contract_routing() -> None:
+    soul = read_repo_file("templates/parent-profile/SOUL.md")
+    script = read_repo_file("scripts/setup-parent-profile.sh")
+    install = read_repo_file("INSTALL.md")
+
+    for text in (soul, script, install):
+        assert_public_safe_text(text)
+
+    required_soul_snippets = [
+        "learnbuddy_parent_command_contracts",
+        "learnbuddy_learning_status",
+        "learnbuddy_create_and_send_exercise",
+        "answer_or_expected_answers",
+        "Do not call",
+        "learnbuddy_child",
+        "Frage Learner folgende Aufgaben",
+    ]
+    for snippet in required_soul_snippets:
+        assert snippet in soul
+
+    required_script_snippets = [
+        "templates/parent-profile/SOUL.md",
+        'platform_toolsets["telegram"] = ["learnbuddy_learning"]',
+        'known_plugin_toolsets["telegram"] = ["learnbuddy_learning", "learnbuddy_child"]',
+        "LEARNBUDDY_CONFIG_PATH",
+        "LEARNBUDDY_ENV_FILE",
+        "python3",
+    ]
+    for snippet in required_script_snippets:
+        assert snippet in script
+
+    assert "scripts/setup-parent-profile.sh" in install
+    assert "learnbuddy_parent_command_contracts" in install
 
 
 def test_telegram_quickstart_documents_child_control_messages() -> None:
