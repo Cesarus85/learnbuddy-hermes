@@ -16,6 +16,7 @@ import os
 import urllib.error
 import urllib.request
 
+from .child_intent import IntentClassifierConfig, classify_child_intent
 from .config import LearnBuddyConfig
 from .delivery import DeliveryMessage, delivery_adapter_from_config
 from .notifier import ParentNotifier
@@ -49,6 +50,7 @@ def process_child_telegram_answers(
     send_feedback: bool = True,
     notify_parent: bool = True,
     transport: Transport | None = None,
+    intent_config: IntentClassifierConfig | None = None,
     now: str | datetime | None = None,
 ) -> dict[str, Any]:
     """Process at most one child Telegram answer for the current pending task."""
@@ -107,7 +109,7 @@ def process_child_telegram_answers(
 
     message = candidate["message"]
     answer_text = str(message.get("text") or "").strip()
-    child_command = _classify_child_control_message(answer_text)
+    child_command = classify_child_intent(answer_text, intent_config)
     if child_command:
         if isinstance(pending, dict):
             command_result = _handle_child_control_message(
@@ -225,63 +227,6 @@ def _with_metadata(delivery: dict[str, Any] | None, metadata: dict[str, Any], *,
     if text is not None:
         result["text"] = text
     return result
-
-
-def _classify_child_control_message(text: str) -> str | None:
-    normalized = " ".join(text.lower().replace("ß", "ss").strip(" .!?¡¿:;,-_\n\t").split())
-    if not normalized:
-        return None
-    repeat_phrases = {
-        "nochmal",
-        "noch mal",
-        "nochmal bitte",
-        "noch mal bitte",
-        "bitte nochmal",
-        "bitte noch mal",
-        "nochmal senden",
-        "noch mal senden",
-        "wiederholen",
-        "bitte wiederholen",
-        "zeige nochmal",
-        "zeig nochmal",
-        "aufgabe nochmal",
-    }
-    help_phrases = {
-        "hilfe",
-        "hilf mir",
-        "ich brauche hilfe",
-        "ich brauch hilfe",
-        "ich weiss nicht",
-        "weiss nicht",
-        "ich weiss es nicht",
-        "keine ahnung",
-        "ich komme nicht weiter",
-        "ich verstehe es nicht",
-    }
-    next_phrases = {
-        "noch eine",
-        "noch eine bitte",
-        "noch ne",
-        "noch ne bitte",
-        "naechste",
-        "naechste bitte",
-        "nächste",
-        "nächste bitte",
-        "neue aufgabe",
-        "neue aufgabe bitte",
-        "noch eine aufgabe",
-        "noch eine aufgabe bitte",
-        "noch ne aufgabe",
-        "noch ne aufgabe bitte",
-        "weiter",
-    }
-    if normalized in repeat_phrases:
-        return "repeat"
-    if normalized in help_phrases:
-        return "help"
-    if normalized in next_phrases:
-        return "next"
-    return None
 
 
 def _handle_child_control_message(

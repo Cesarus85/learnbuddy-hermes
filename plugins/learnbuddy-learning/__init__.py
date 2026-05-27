@@ -18,7 +18,7 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.8"
+PLUGIN_VERSION = "0.1.0-alpha.9"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {

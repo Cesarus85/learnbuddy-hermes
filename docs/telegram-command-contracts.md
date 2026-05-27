@@ -44,6 +44,20 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 
 Parent command contracts are never exposed through the `learnbuddy_child` toolset. Child Telegram handling remains narrow: answers, `Nochmal`, `Hilfe`, `Ich weiß nicht`, `Noch eine`, and `Noch eine Aufgabe` are processed by the Kids-Bot watcher without admin capability.
 
+### Child-intent classification
+
+The watcher uses a two-stage child-intent classifier:
+
+1. **Preflight** — fast phrase-based lookup against known control messages (`Nochmal`, `Hilfe`, `Ich weiß nicht`, `Noch eine`, `Weiter`, `Mehr bitte`, etc.). No network call, no LLM, instant.
+2. **Semantic fallback** — if the preflight misses and an LLM-backed intent classifier is configured (`intent_classifier.enabled: true` in config), the watcher asks a small model to classify free-form child text into `repeat`, `help`, `next`, or `answer` (treated as not-a-control-message). This catches natural variations like "ich will noch was rechnen", "ich checks nicht", "was war die frage nochmal" — without maintaining an ever-growing phrase list.
+
+The semantic classifier is **opt-in** and **bounded**:
+
+- It can only return `repeat`, `help`, or `next` — the same three intents the phrase list returns.
+- It can never generate exercises, impersonate the child, or trigger admin actions.
+- If the LLM call fails or times out, the message falls through to regular answer evaluation — never silently ignored.
+- The API key is read from an environment variable (`LEARNBUDDY_INTENT_API_KEY` by default); never stored in config files.
+
 ### Child `Noch eine`
 
 - With a pending task: the watcher replies that the learner should finish the current task first; attempts stay unchanged.
