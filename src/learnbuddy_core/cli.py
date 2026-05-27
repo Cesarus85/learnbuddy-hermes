@@ -245,6 +245,61 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_daily_parent_status(
+    config: LearnBuddyConfig,
+    runtime: LearnBuddyRuntime,
+    *,
+    notify: bool = False,
+    include_empty: bool = False,
+    force: bool = False,
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Render and optionally deliver one bounded daily parent status report."""
+    local_now = _parse_datetime(now, config.timezone)
+    date_text = local_now.date().isoformat()
+    automation = runtime.parent_automation_status(now=local_now.isoformat(), timezone_name=config.timezone)
+    if automation.get("paused"):
+        return {"status": "automation_paused", "automation": automation, "report": None, "notification": None}
+    daily_state = runtime.daily_parent_status_state()
+    if daily_state.get("last_sent_date") == date_text and not force:
+        return {"status": "already_sent", "daily_status": daily_state, "report": None, "notification": None}
+    report = runtime.parent_daily_report(now=local_now.isoformat(), timezone_name=config.timezone)
+    if int(report.get("answers") or 0) == 0 and int(report.get("sessions_started") or 0) == 0 and not include_empty:
+        daily = runtime.mark_daily_parent_status(date=date_text, status="no_activity")
+        return {"status": "no_activity", "daily_status": daily, "report": report, "notification": None}
+    notification = None
+    status = "rendered"
+    if notify:
+        notification = ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_report(report).to_dict()
+        status = "sent" if _delivery_succeeded(notification.get("status")) else str(notification.get("status") or "error")
+    daily = runtime.mark_daily_parent_status(date=date_text, delivery_result=notification if status == "sent" else None, status=status)
+    return {"status": status, "daily_status": daily, "report": report, "notification": notification}
+
+
+def cmd_daily_status(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    result = run_daily_parent_status(
+        config,
+        runtime,
+        notify=args.notify,
+        include_empty=args.include_empty,
+        force=args.force,
+        now=args.now,
+    )
+    _print_json(result)
+    return 0
+
+
+def cmd_automation(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    action = args.action.replace("-", "_")
+    result = runtime.set_parent_automation(action, now=args.now, timezone_name=config.timezone, reason=args.reason)
+    _print_json(result)
+    return 0
+
+
 def cmd_help_request(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
     runtime = _runtime_from_args(args, config)
@@ -346,6 +401,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_runtime_options(report)
     report.add_argument("--notify", action="store_true")
     report.set_defaults(func=cmd_report)
+
+    daily_status = sub.add_parser("daily-status", help="render/send one daily parent status report with duplicate and pause guards")
+    _add_runtime_options(daily_status)
+    daily_status.add_argument("--notify", action="store_true", help="deliver the daily status to the configured parent adapter")
+    daily_status.add_argument("--include-empty", action="store_true", help="send even when no answers were recorded for the local day")
+    daily_status.add_argument("--force", action="store_true", help="ignore the once-per-day send guard")
+    daily_status.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
+    daily_status.set_defaults(func=cmd_daily_status)
+
+    automation = sub.add_parser("automation", help="inspect or control parent-facing scheduled automation")
+    _add_runtime_options(automation)
+    automation.add_argument("action", choices=["status", "pause-today", "resume"])
+    automation.add_argument("--reason", help="short parent-facing reason for pausing today")
+    automation.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
+    automation.set_defaults(func=cmd_automation)
 
     help_request = sub.add_parser("help-request", help="record a bounded parent-help request")
     _add_runtime_options(help_request)

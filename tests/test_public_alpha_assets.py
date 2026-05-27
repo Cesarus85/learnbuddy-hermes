@@ -68,12 +68,16 @@ def test_public_docs_include_telegram_parent_command_contracts() -> None:
         "Parent Telegram command contracts",
         "learnbuddy_learning_status",
         "learnbuddy_parent_report",
+        "learnbuddy_daily_parent_status",
+        "learnbuddy_parent_automation_control",
+        "heute pausieren",
         "learnbuddy_deliver_pending_exercise",
         "learnbuddy_dispatch_plan",
         "learnbuddy_create_and_send_exercise",
         "answer_or_expected_answers",
         "Frage Learner folgende Aufgaben",
         "scripts/setup-parent-profile.sh",
+        "scripts/install-daily-status-timer.sh",
         "Web/PWA",
     ]
     assert_public_safe_text(text)
@@ -84,15 +88,18 @@ def test_public_docs_include_telegram_parent_command_contracts() -> None:
 def test_parent_profile_assets_support_live_command_contract_routing() -> None:
     soul = read_repo_file("templates/parent-profile/SOUL.md")
     script = read_repo_file("scripts/setup-parent-profile.sh")
+    daily_timer = read_repo_file("scripts/install-daily-status-timer.sh")
     install = read_repo_file("INSTALL.md")
 
-    for text in (soul, script, install):
+    for text in (soul, script, daily_timer, install):
         assert_public_safe_text(text)
 
     required_soul_snippets = [
         "learnbuddy_parent_command_contracts",
         "learnbuddy_learning_status",
         "learnbuddy_create_and_send_exercise",
+        "learnbuddy_daily_parent_status",
+        "learnbuddy_parent_automation_control",
         "answer_or_expected_answers",
         "Do not call",
         "learnbuddy_child",
@@ -114,6 +121,16 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
 
     assert "scripts/setup-parent-profile.sh" in install
     assert "learnbuddy_parent_command_contracts" in install
+    required_timer_snippets = [
+        "learnbuddy daily-status --notify",
+        "OnCalendar",
+        "Persistent=true",
+        "pause-today",
+        "python3",
+    ]
+    for snippet in required_timer_snippets:
+        assert snippet in daily_timer
+    assert "scripts/install-daily-status-timer.sh" in install
 
 
 def test_telegram_quickstart_documents_child_control_messages() -> None:

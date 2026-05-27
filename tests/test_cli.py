@@ -302,6 +302,127 @@ delivery:
     assert report["notification"]["target"] == "parent"
 
 
+def test_cli_daily_status_notifies_once_per_day_and_skips_duplicate(capsys, tmp_path):
+    data_dir = tmp_path / "cli-daily-status-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Robin
+agent:
+  name: StudyFox
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["queue", "--config", str(config_path), "--subject", "math", "--prompt", "8 + 1?", "--answer", "9"]) == 0
+    exercise_id = json.loads(capsys.readouterr().out)["exercise"]["id"]
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
+    capsys.readouterr()
+    assert main(["answer", "--config", str(config_path), "9"]) == 0
+    capsys.readouterr()
+
+    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first["status"] == "sent"
+    assert first["report"]["answers"] == 1
+    assert first["notification"]["status"] == "dry_run"
+    assert "Tagesstatus" in first["report"]["text"]
+
+    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:30:00+02:00"]) == 0
+    duplicate = json.loads(capsys.readouterr().out)
+    assert duplicate["status"] == "already_sent"
+    assert duplicate["notification"] is None
+
+
+def test_cli_daily_status_respects_pause_today_and_resume(capsys, tmp_path):
+    data_dir = tmp_path / "cli-daily-pause-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main(["automation", "--config", str(config_path), "pause-today", "--reason", "Familientag", "--now", "2026-05-27T10:00:00+02:00"]) == 0
+    paused = json.loads(capsys.readouterr().out)
+    assert paused["status"] == "paused"
+    assert paused["pause_date"] == "2026-05-27"
+
+    assert main(["daily-status", "--config", str(config_path), "--notify", "--include-empty", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    skipped = json.loads(capsys.readouterr().out)
+    assert skipped["status"] == "automation_paused"
+    assert skipped["notification"] is None
+
+    assert main(["automation", "--config", str(config_path), "resume", "--now", "2026-05-27T21:05:00+02:00"]) == 0
+    resumed = json.loads(capsys.readouterr().out)
+    assert resumed["status"] == "active"
+
+    assert main(["daily-status", "--config", str(config_path), "--notify", "--include-empty", "--now", "2026-05-27T21:10:00+02:00"]) == 0
+    sent = json.loads(capsys.readouterr().out)
+    assert sent["status"] == "sent"
+    assert sent["notification"]["status"] == "dry_run"
+
+
+def test_cli_daily_status_skips_empty_report_unless_included(capsys, tmp_path):
+    data_dir = tmp_path / "cli-daily-empty-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "no_activity"
+    assert result["notification"] is None
+    assert result["report"]["answers"] == 0
+
+
+def test_cli_daily_status_sends_started_unanswered_day_without_include_empty(capsys, tmp_path):
+    data_dir = tmp_path / "cli-daily-started-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Robin
+agent:
+  name: StudyFox
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["queue", "--config", str(config_path), "--subject", "math", "--prompt", "8 + 1?", "--answer", "9"]) == 0
+    exercise_id = json.loads(capsys.readouterr().out)["exercise"]["id"]
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
+    capsys.readouterr()
+
+    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "sent"
+    assert result["report"]["answers"] == 0
+    assert result["report"]["sessions_started"] == 1
+    assert result["notification"]["status"] == "dry_run"
+    assert "Antworten: noch keine abgegeben" in result["report"]["text"]
+
+
 def test_cli_help_request_records_and_can_notify_parent(capsys, tmp_path):
     data_dir = tmp_path / "cli-help-data"
     config_path = tmp_path / "learnbuddy.yaml"

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from learnbuddy_core.cli import _auto_sessions_today, _inside_allowed_hours, _parse_datetime
+from learnbuddy_core.cli import _auto_sessions_today, _inside_allowed_hours, _parse_datetime, run_daily_parent_status
 from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
 from learnbuddy_core.notifier import ParentNotifier
@@ -19,7 +19,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.14"
+PLUGIN_VERSION = "0.1.0-alpha.15"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -40,6 +40,20 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
         "examples": ["Bericht", "Wie lief es heute?", "Schick mir einen Report"],
         "notify_default": False,
         "policy": "Default notify=false. Set notify=true only when the parent explicitly asks to send/push the report.",
+    },
+    {
+        "operation": "daily_status",
+        "tool": "learnbuddy_daily_parent_status",
+        "examples": ["Tagesstatus", "Schick den Tagesstatus", "Status heute Abend"],
+        "notify_default": False,
+        "policy_bounded": True,
+        "policy": "One daily parent status. Respects pause-today and once-per-day guards; empty days are skipped unless include_empty=true.",
+    },
+    {
+        "operation": "automation_control",
+        "tool": "learnbuddy_parent_automation_control",
+        "examples": ["heute pausieren", "Lernbot heute aus", "weiter", "Automatik wieder an"],
+        "policy": "Only controls LearnBuddy parent-facing automation state; never changes child answers or external systems.",
     },
     {
         "operation": "resend_pending",
@@ -164,6 +178,28 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             **COMMON_PROPERTIES,
             "notify": {"type": "boolean", "default": False, "description": "Send the report to the configured parent adapter when true."},
         },
+        "additionalProperties": False,
+    },
+    "learnbuddy_daily_parent_status": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "notify": {"type": "boolean", "default": False, "description": "Send the daily status to the configured parent adapter when true."},
+            "include_empty": {"type": "boolean", "default": False, "description": "Send even when no answers were recorded for the local day."},
+            "force": {"type": "boolean", "default": False, "description": "Ignore the once-per-day send guard."},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
+        },
+        "additionalProperties": False,
+    },
+    "learnbuddy_parent_automation_control": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "action": {"type": "string", "enum": ["status", "pause_today", "resume"], "description": "Inspect, pause today's scheduled automation, or resume it."},
+            "reason": {"type": "string", "description": "Optional short reason for pausing today."},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
+        },
+        "required": ["action"],
         "additionalProperties": False,
     },
     "learnbuddy_parent_help_request": {
@@ -462,6 +498,34 @@ def learnbuddy_parent_report(args: dict[str, Any] | None = None) -> str:
     return _json(report)
 
 
+def learnbuddy_daily_parent_status(args: dict[str, Any] | None = None) -> str:
+    """Render/send one daily parent status with pause and duplicate guards."""
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    return _json(run_daily_parent_status(
+        config,
+        runtime,
+        notify=bool(args.get("notify", False)),
+        include_empty=bool(args.get("include_empty", False)),
+        force=bool(args.get("force", False)),
+        now=args.get("now"),
+    ))
+
+
+def learnbuddy_parent_automation_control(args: dict[str, Any] | None = None) -> str:
+    """Inspect, pause, or resume parent-facing scheduled automation."""
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    return _json(runtime.set_parent_automation(
+        str(args.get("action") or "status"),
+        now=args.get("now"),
+        timezone_name=config.timezone,
+        reason=args.get("reason"),
+    ))
+
+
 def learnbuddy_parent_help_request(args: dict[str, Any] | None = None) -> str:
     """Record a bounded request for parent help; notify only when requested."""
     args = dict(args or {})
@@ -592,6 +656,8 @@ TOOLS = [
     ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy current pending/queue status only; not answer history."),
     ("learnbuddy_parent_answer_status", learnbuddy_parent_answer_status, "learnbuddy_learning", "Show recent answer status for parents, including the latest prompt, answer result, and parent notification delivery record."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
+    ("learnbuddy_daily_parent_status", learnbuddy_daily_parent_status, "learnbuddy_learning", "Scheduler-safe daily parent status: one local-day report with pause, duplicate, and empty-day guards."),
+    ("learnbuddy_parent_automation_control", learnbuddy_parent_automation_control, "learnbuddy_learning", "Inspect, pause today, or resume LearnBuddy parent-facing scheduled automation."),
     ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "learnbuddy_learning", "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
     ("learnbuddy_child_submit_answer", learnbuddy_child_submit_answer, "learnbuddy_child", "Child profile: submit an answer for the current LearnBuddy exercise. No file, terminal, or generic messaging access."),
     ("learnbuddy_child_status", learnbuddy_child_status, "learnbuddy_child", "Child profile: check whether a LearnBuddy exercise is pending."),

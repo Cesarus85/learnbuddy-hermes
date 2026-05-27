@@ -27,6 +27,21 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 - Default args: `notify=false`
 - Rule: use `notify=true` only when the parent explicitly asks to send/push the report.
 
+### Daily parent status
+
+- Parent examples: `Tagesstatus`, `Schick den Tagesstatus`, `Status heute Abend`
+- Tool: `learnbuddy_daily_parent_status`
+- Default args: `notify=false`, `include_empty=false`, `force=false`
+- Rule: scheduler-safe and bounded. It renders one local-day report with started tasks, latest answer per task, attempt history, and subject totals; respects `heute pausieren`/`pause_today`; skips duplicate sends for the same local date; and skips truly empty days (no started tasks and no answers) unless `include_empty=true`.
+- Installable timer: `scripts/install-daily-status-timer.sh --config learnbuddy.yaml --enable --start` writes a systemd user timer whose service runs `learnbuddy daily-status --notify`.
+
+### Parent automation control
+
+- Parent examples: `heute pausieren`, `Lernbot heute aus`, `weiter`, `Automatik wieder an`
+- Tool: `learnbuddy_parent_automation_control`
+- Args: `action=status|pause_today|resume`, optional `reason`
+- Rule: controls only LearnBuddy scheduled parent-facing automation. It does not create tasks, answer for the child, change system settings, or notify external humans by itself.
+
 ### Resend pending prompt
 
 - Parent examples: `Nochmal senden`, `Learner hat die Aufgabe nicht bekommen`, `Schick die offene Aufgabe erneut`

@@ -225,3 +225,64 @@ def test_runtime_records_parent_help_requests(tmp_path):
     assert "Dringende Elternhilfe" in request["text"]
     assert "Alex hängt" in request["text"]
     assert runtime.help_requests() == [request]
+
+
+def test_runtime_parent_daily_report_filters_to_local_day(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_name="Alex", agent_name="BuddyBot")
+    yesterday = runtime.add_exercise({"subject": "math", "prompt": "1 + 1?", "answer": "2"})
+    today = runtime.add_exercise({"subject": "german", "prompt": "Artikel von Baum?", "answer": "der"})
+
+    runtime.open_exercise(yesterday["id"], timestamp="2026-05-26T20:00:00+00:00")
+    runtime.submit_answer("2", timestamp="2026-05-26T20:01:00+00:00")
+    runtime.open_exercise(today["id"], timestamp="2026-05-27T08:00:00+00:00")
+    runtime.submit_answer("die", timestamp="2026-05-27T08:01:00+00:00")
+
+    report = runtime.parent_daily_report(now="2026-05-27T21:00:00+02:00", timezone_name="Europe/Berlin")
+
+    assert report["date"] == "2026-05-27"
+    assert report["answers"] == 1
+    assert report["answer_attempts"] == 1
+    assert report["sessions_started"] == 1
+    assert report["correct"] == 0
+    assert report["subjects"] == {"german": {"answers": 1, "correct": 0}}
+    assert "Tagesstatus" in report["text"]
+    assert "Heute neu gestartete Aufgaben: 1" in report["text"]
+    assert "0/1 Aufgaben final richtig" in report["text"]
+    assert "Artikel von Baum?" in report["text"]
+    assert "Alex: die" in report["text"]
+
+
+def test_runtime_parent_daily_report_includes_attempt_history(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", max_attempts=3, child_name="Alex", agent_name="BuddyBot")
+    retried = runtime.add_exercise({"subject": "german", "prompt": "Artikel von Baum?", "answer": "der"})
+
+    runtime.open_exercise(retried["id"], timestamp="2026-05-27T07:01:00+02:00")
+    runtime.submit_answer("die", timestamp="2026-05-27T07:02:00+02:00")
+    runtime.submit_answer("das", timestamp="2026-05-27T07:03:00+02:00")
+
+    report = runtime.parent_daily_report(now="2026-05-27T21:00:00+02:00", timezone_name="Europe/Berlin")
+
+    assert report["sessions_started"] == 1
+    assert report["answers"] == 1
+    assert report["answer_attempts"] == 2
+    assert "Heute neu gestartete Aufgaben: 1" in report["text"]
+    assert "Antworten/Versuche insgesamt: 2" in report["text"]
+    assert "Vorherige Versuche: die" in report["text"]
+    assert "Alex: das" in report["text"]
+    assert "Antworten: noch keine abgegeben" not in report["text"]
+
+
+def test_runtime_parent_automation_pause_today_and_resume(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_name="Alex")
+
+    paused = runtime.set_parent_automation("pause_today", now="2026-05-27T10:00:00+02:00", timezone_name="Europe/Berlin", reason="Familientag")
+
+    assert paused["status"] == "paused"
+    assert paused["pause_date"] == "2026-05-27"
+    assert paused["reason"] == "Familientag"
+    assert runtime.parent_automation_status(now="2026-05-27T20:00:00+02:00", timezone_name="Europe/Berlin")["paused"] is True
+    assert runtime.parent_automation_status(now="2026-05-28T08:00:00+02:00", timezone_name="Europe/Berlin")["paused"] is False
+
+    resumed = runtime.set_parent_automation("resume", now="2026-05-27T11:00:00+02:00", timezone_name="Europe/Berlin")
+    assert resumed["status"] == "active"
+    assert runtime.parent_automation_status(now="2026-05-27T20:00:00+02:00", timezone_name="Europe/Berlin")["paused"] is False

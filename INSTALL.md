@@ -153,7 +153,7 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter → persist delivery metadata. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic exercise, respecting daily limit, allowed hours, and current pending state. `learnbuddy_deliver_pending_exercise` repairs/resends the current pending prompt when the learner did not receive it. It also exposes `learnbuddy_parent_help_request` as the public-safe parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, scheduled dispatch is policy-bounded, repair/resend is explicit, help/report pushes require explicit notification flags, and status reads do not send messages.
+`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter → persist delivery metadata. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic exercise, respecting daily limit, allowed hours, and current pending state. `learnbuddy_daily_parent_status` sends at most one local-day parent status, respects `pause_today`, skips duplicate sends, and skips empty days unless `include_empty=true`; `learnbuddy_parent_automation_control` handles `heute pausieren`/resume/status commands. `learnbuddy_deliver_pending_exercise` repairs/resends the current pending prompt when the learner did not receive it. It also exposes `learnbuddy_parent_help_request` as the public-safe parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, scheduled dispatch is policy-bounded, repair/resend is explicit, help/report/status pushes require explicit notification flags, and status reads do not send messages.
 
 The parent/main profile can use the broad `learnbuddy_learning` toolset for parent/admin commands. A child-facing profile should be created separately as a full child-facing Hermes Agent with the `learnbuddy_child` baseline plus explicit capability levels (`locked`, `guided`, `curious`, `teen-supervised`). Do not clone a parent/admin profile wholesale; upgrades need parent approval, audit, and a downgrade path.
 
@@ -199,6 +199,19 @@ Start/enable it only after the child profile `.env` has a dedicated `TELEGRAM_BO
 ```bash
 scripts/install-child-gateway-service.sh --profile learnbuddy-child --enable --start
 ```
+
+Optional daily parent status timer:
+
+```bash
+scripts/install-daily-status-timer.sh \
+  --profile learnbuddy-parent \
+  --config ./learnbuddy.yaml \
+  --env-file ./learnbuddy.env \
+  --on-calendar 21:00 \
+  --enable --start
+```
+
+The generated systemd user timer runs `learnbuddy daily-status --notify`. The command is safe for unattended use: it reports started tasks, latest answers, attempts, and subject totals; skips truly empty days by default; sends at most once per local date; and respects parent `heute pausieren` / `learnbuddy_parent_automation_control action=pause_today`.
 
 ## 8. Optional: Telegram delivery
 

@@ -360,6 +360,8 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_learning_status",
         "learnbuddy_parent_answer_status",
         "learnbuddy_parent_report",
+        "learnbuddy_daily_parent_status",
+        "learnbuddy_parent_automation_control",
         "learnbuddy_parent_help_request",
         "learnbuddy_child_submit_answer",
         "learnbuddy_child_status",
@@ -400,6 +402,12 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert answer_status_schema["properties"]["limit"]["default"] == 3
     assert "recent answer" in ctx.tools["learnbuddy_parent_answer_status"]["schema"]["description"].lower()
     assert report_schema["properties"]["notify"]["default"] is False
+    daily_schema = ctx.tools["learnbuddy_daily_parent_status"]["schema"]["parameters"]
+    automation_schema = ctx.tools["learnbuddy_parent_automation_control"]["schema"]["parameters"]
+    assert daily_schema["properties"]["notify"]["default"] is False
+    assert daily_schema["properties"]["include_empty"]["default"] is False
+    assert automation_schema["required"] == ["action"]
+    assert automation_schema["properties"]["action"]["enum"] == ["status", "pause_today", "resume"]
 
     help_schema = ctx.tools["learnbuddy_parent_help_request"]["schema"]["parameters"]
     assert help_schema["required"] == ["reason"]
@@ -430,7 +438,7 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
 
     assert contracts["status"] == "ok"
     operations = {item["operation"]: item for item in contracts["contracts"]}
-    assert set(operations) == {"current_status", "answer_status", "report", "resend_pending", "dispatch_plan", "create_and_send_exercise"}
+    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "automation_control", "resend_pending", "dispatch_plan", "create_and_send_exercise"}
     assert operations["current_status"]["tool"] == "learnbuddy_learning_status"
     assert "Was ist offen?" in operations["current_status"]["examples"]
     assert operations["answer_status"]["tool"] == "learnbuddy_parent_answer_status"
@@ -438,6 +446,10 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert operations["answer_status"]["policy"].startswith("Read-only")
     assert operations["report"]["tool"] == "learnbuddy_parent_report"
     assert operations["report"]["notify_default"] is False
+    assert operations["daily_status"]["tool"] == "learnbuddy_daily_parent_status"
+    assert operations["daily_status"]["policy_bounded"] is True
+    assert operations["automation_control"]["tool"] == "learnbuddy_parent_automation_control"
+    assert "heute pausieren" in operations["automation_control"]["examples"]
     assert operations["resend_pending"]["tool"] == "learnbuddy_deliver_pending_exercise"
     assert operations["resend_pending"]["args"] == {"force": True}
     assert operations["dispatch_plan"]["tool"] == "learnbuddy_dispatch_plan"
@@ -447,6 +459,63 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert "Frage Learner folgende Aufgaben" in operations["create_and_send_exercise"]["examples"]
     assert contracts["safety"]["no_child_toolset"] is True
     assert contracts["safety"]["no_unbounded_generation"] is True
+
+
+def test_daily_parent_status_and_automation_control_tools(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "daily-status-plugin"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Alex
+agent:
+  name: BuddyBot
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "3 + 5?",
+        "answer": "8",
+    }))
+    plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": queued["exercise"]["id"]})
+    plugin.learnbuddy_submit_answer({"config_path": str(config_path), "answer": "8"})
+
+    first = json.loads(plugin.learnbuddy_daily_parent_status({
+        "config_path": str(config_path),
+        "notify": True,
+        "now": "2026-05-27T21:00:00+02:00",
+    }))
+    duplicate = json.loads(plugin.learnbuddy_daily_parent_status({
+        "config_path": str(config_path),
+        "notify": True,
+        "now": "2026-05-27T21:05:00+02:00",
+    }))
+    paused = json.loads(plugin.learnbuddy_parent_automation_control({
+        "config_path": str(config_path),
+        "action": "pause_today",
+        "reason": "Pause",
+        "now": "2026-05-28T10:00:00+02:00",
+    }))
+    skipped = json.loads(plugin.learnbuddy_daily_parent_status({
+        "config_path": str(config_path),
+        "notify": True,
+        "include_empty": True,
+        "now": "2026-05-28T21:00:00+02:00",
+    }))
+
+    assert first["status"] == "sent"
+    assert first["notification"]["status"] == "dry_run"
+    assert duplicate["status"] == "already_sent"
+    assert paused["status"] == "paused"
+    assert skipped["status"] == "automation_paused"
+    assert skipped["notification"] is None
 
 
 def test_create_and_send_requires_expected_answer_before_delivery(tmp_path):
