@@ -103,7 +103,26 @@ mkdir -p "$PLUGIN_DIR"
 rsync -a --delete plugins/learnbuddy-learning/ "$PLUGIN_DIR/"
 
 hermes --profile "$PROFILE" plugins enable learnbuddy-learning || true
-hermes --profile "$PROFILE" config set platform_toolsets.telegram "$TELEGRAM_TOOLSETS"
+
+PROFILE_CONFIG="$PROFILE_HOME/config.yaml"
+"$PYTHON_BIN" - "$PROFILE_CONFIG" "$TELEGRAM_TOOLSETS" <<'PY'
+from pathlib import Path
+import json
+import sys
+import yaml
+
+path = Path(sys.argv[1])
+toolsets = json.loads(sys.argv[2])
+config = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+if not isinstance(config, dict):
+    config = {}
+platform_toolsets = config.setdefault("platform_toolsets", {})
+if not isinstance(platform_toolsets, dict):
+    platform_toolsets = {}
+    config["platform_toolsets"] = platform_toolsets
+platform_toolsets["telegram"] = toolsets
+path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+PY
 
 if [[ -n "$MODEL_PROVIDER" ]]; then
   hermes --profile "$PROFILE" config set model.provider "$MODEL_PROVIDER"
