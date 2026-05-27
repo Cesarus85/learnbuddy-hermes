@@ -302,6 +302,57 @@ delivery:
     assert report["notification"]["target"] == "parent"
 
 
+def test_cli_daily_status_loads_env_file_for_systemd_timer(capsys, monkeypatch, tmp_path):
+    data_dir = tmp_path / "cli-daily-env-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    env_path = tmp_path / "learnbuddy.env"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Robin
+agent:
+  name: StudyFox
+delivery:
+  mode: telegram
+  telegram:
+    child_bot_env: CHILD_BOT_TOKEN_ENV
+    allowed_child_chat_id_env: CHILD_CHAT_ID_ENV
+    parent_bot_env: PARENT_BOT_TOKEN_ENV
+    parent_chat_id_env: PARENT_CHAT_ID_ENV
+""".strip(),
+        encoding="utf-8",
+    )
+    env_path.write_text("PARENT_BOT_TOKEN_ENV=fake-token\nPARENT_CHAT_ID_ENV=fake-chat\n", encoding="utf-8")
+    calls = []
+
+    def fake_transport(url, payload):
+        calls.append((url, payload))
+        return {"ok": True, "result": {"message_id": 42}}
+
+    monkeypatch.setenv("LEARNBUDDY_ENV_FILE", str(env_path))
+    monkeypatch.delenv("PARENT_BOT_TOKEN_ENV", raising=False)
+    monkeypatch.delenv("PARENT_CHAT_ID_ENV", raising=False)
+    monkeypatch.setattr("learnbuddy_core.delivery._telegram_transport", fake_transport)
+
+    assert main(["queue", "--config", str(config_path), "--subject", "math", "--prompt", "8 + 1?", "--answer", "9"]) == 0
+    exercise_id = json.loads(capsys.readouterr().out)["exercise"]["id"]
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
+    capsys.readouterr()
+    assert main(["answer", "--config", str(config_path), "9"]) == 0
+    capsys.readouterr()
+
+    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "sent"
+    assert result["notification"]["status"] == "sent"
+    assert result["notification"]["message_id"] == "42"
+    assert calls and "fake-token" in calls[0][0]
+    assert calls[0][1]["chat_id"] == "fake-chat"
+
+
 def test_cli_daily_status_notifies_once_per_day_and_skips_duplicate(capsys, tmp_path):
     data_dir = tmp_path / "cli-daily-status-data"
     config_path = tmp_path / "learnbuddy.yaml"

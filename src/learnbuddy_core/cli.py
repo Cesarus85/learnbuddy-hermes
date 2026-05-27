@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, time
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ from .doctor import build_doctor_report, doctor_exit_code, format_text_report
 from .maintenance import backup_runtime_data, create_setup, restore_runtime_data
 from .notifier import ParentNotifier
 from .runtime import LearnBuddyRuntime
-from .telegram_answer_watcher import process_child_telegram_answers
+from .telegram_answer_watcher import load_env_file, process_child_telegram_answers
 
 
 def _config_from_args(args: argparse.Namespace) -> LearnBuddyConfig:
@@ -277,6 +278,7 @@ def run_daily_parent_status(
 
 
 def cmd_daily_status(args: argparse.Namespace) -> int:
+    load_env_file(os.getenv("LEARNBUDDY_ENV_FILE"))
     config = _config_from_args(args)
     runtime = _runtime_from_args(args, config)
     result = run_daily_parent_status(
