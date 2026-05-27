@@ -46,7 +46,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$PYTHON_BIN" ]]; then
-  if command -v python3 >/dev/null 2>&1; then
+  # Prefer a local project virtualenv when the installer is run from a source checkout.
+  # This keeps systemd services on staging/VPS installs from accidentally using
+  # /usr/bin/python3 without the editable LearnBuddy package installed.
+  if [[ -x "${PWD}/.venv/bin/python" ]]; then
+    PYTHON_BIN="${PWD}/.venv/bin/python"
+  elif [[ -x "$(dirname "${PWD}")/.venv/bin/python" ]]; then
+    PYTHON_BIN="$(dirname "${PWD}")/.venv/bin/python"
+  elif command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="$(command -v python3)"
   elif command -v python >/dev/null 2>&1; then
     PYTHON_BIN="$(command -v python)"

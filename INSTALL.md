@@ -208,10 +208,11 @@ scripts/install-daily-status-timer.sh \
   --config ./learnbuddy.yaml \
   --env-file ./learnbuddy.env \
   --on-calendar 21:00 \
+  --python ./.venv/bin/python \
   --enable --start
 ```
 
-The generated systemd user timer runs `learnbuddy daily-status --notify`. The command is safe for unattended use: it reports started tasks, latest answers, attempts, and subject totals; skips truly empty days by default; sends at most once per local date; and respects parent `heute pausieren` / `learnbuddy_parent_automation_control action=pause_today`.
+The installer auto-detects a project `.venv/bin/python` or sibling `../.venv/bin/python` when run from a source checkout; pass `--python` explicitly for nonstandard venv layouts. The generated systemd user timer runs `learnbuddy daily-status --notify`. The command is safe for unattended use: it reports started tasks, latest answers, attempts, and subject totals; skips truly empty days by default; sends at most once per local date; and respects parent `heute pausieren` / `learnbuddy_parent_automation_control action=pause_today`.
 
 ## 8. Optional: Telegram delivery
 

@@ -33,7 +33,7 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 - Tool: `learnbuddy_daily_parent_status`
 - Default args: `notify=false`, `include_empty=false`, `force=false`
 - Rule: scheduler-safe and bounded. It renders one local-day report with started tasks, latest answer per task, attempt history, and subject totals; respects `heute pausieren`/`pause_today`; skips duplicate sends for the same local date; and skips truly empty days (no started tasks and no answers) unless `include_empty=true`.
-- Installable timer: `scripts/install-daily-status-timer.sh --config learnbuddy.yaml --enable --start` writes a systemd user timer whose service runs `learnbuddy daily-status --notify`.
+- Installable timer: `scripts/install-daily-status-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy daily-status --notify`. The installer auto-detects project/sibling `.venv/bin/python` when run from a source checkout, but explicit `--python` is safest for VPS/staging layouts.
 
 ### Parent automation control
 

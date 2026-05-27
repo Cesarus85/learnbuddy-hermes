@@ -126,6 +126,7 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
         "OnCalendar",
         "Persistent=true",
         "pause-today",
+        ".venv/bin/python",
         "python3",
     ]
     for snippet in required_timer_snippets:
