@@ -149,9 +149,9 @@ chmod 600 ./learnbuddy.env
 scripts/setup-child-profile.sh --profile learnbuddy-child --config ./learnbuddy.yaml --env-file ./learnbuddy.env --capability-level guided --skip-install
 ```
 
-## 4. Configure the child profile gateway
+## 4. Install the child profile gateway service
 
-Use the normal Hermes gateway setup for the child profile and the dedicated child bot token.
+The child gateway is a separate systemd user service for the child Hermes profile. Install the unit first; start it only after the dedicated child Telegram bot token and allowlists are in the child profile `.env`.
 
 Checklist before starting the gateway:
 
@@ -163,10 +163,34 @@ hermes --profile learnbuddy-child tools list
 
 Confirm the child profile exposes the selected capability level and does not expose terminal/file/code execution/generic messaging tools.
 
-Then start or restart the gateway for that profile using your normal Hermes service pattern. The intended service name for a dedicated child gateway is:
+Install the dedicated service:
+
+```bash
+scripts/install-child-gateway-service.sh --profile learnbuddy-child
+```
+
+The default service name is:
 
 ```text
 hermes-gateway-learnbuddy-child.service
+```
+
+Before `--start` or `--enable`, the installer refuses unsafe gateway promotion unless the child profile `.env` contains:
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_ALLOWED_USERS or TELEGRAM_ALLOWED_CHATS
+TELEGRAM_HOME_CHANNEL
+TELEGRAM_FREE_RESPONSE_CHATS
+```
+
+It also refuses to start if the child bot token matches the default profile Telegram bot token. That check is intentionally blunt; reusing the parent/default bot for a child profile is how you create a haunted house with push notifications.
+
+Once the dedicated child BotFather token and allowlists are set:
+
+```bash
+scripts/install-child-gateway-service.sh --profile learnbuddy-child --enable --start
+systemctl --user status hermes-gateway-learnbuddy-child.service
 ```
 
 If your Hermes install creates a different per-profile service name, document it in your private runbook and keep the parent and child gateways separate.

@@ -77,7 +77,7 @@ Only bounded LearnBuddy tools should be exposed to the child profile at first. A
 ```text
 plugins/learnbuddy-learning/        Hermes plugin wrapper
 src/learnbuddy_core/                shared core logic
-scripts/                            helper scripts for profile setup
+scripts/                            helper scripts for profile and child gateway setup
 examples/                           safe example configs
 examples/exercises/de/              synthetic exercise fixtures
 templates/                          profile/config templates
@@ -170,6 +170,8 @@ LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
 The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, delivers it to the configured child adapter in one bounded call, and stores delivery metadata on the pending session. `learnbuddy_parent_command_contracts` publishes the Telegram parent-operation contract for status, report, resend, scheduled dispatch, and create/send routing. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic exercise, and `learnbuddy_deliver_pending_exercise` repairs/resends the currently pending prompt if the learner did not receive it. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, repair/resend is explicit, status reads are separate, and pushed parent reports require `notify=true` explicitly.
+
+For direct child chat, create the separate profile with `scripts/setup-child-profile.sh`, then install the dedicated gateway unit with `scripts/install-child-gateway-service.sh --profile learnbuddy-child`. The installer refuses to start/enable unless the child profile has a dedicated `TELEGRAM_BOT_TOKEN`, allowlists, home channel, and free-response chat config, and it rejects accidental reuse of the default profile's Telegram bot token.
 
 ## Docs
 

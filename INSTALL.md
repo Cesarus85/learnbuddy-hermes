@@ -177,7 +177,17 @@ hermes --profile learnbuddy-child config set platform_toolsets.telegram '["learn
 hermes --profile learnbuddy-child config check
 ```
 
-Before any real child uses it, verify the child profile has no terminal, file, code execution, smart-home, purchasing, generic messaging, or unapproved broad skills/delegation/cron tools enabled. See [`docs/setup-child-profile.md`](docs/setup-child-profile.md). If you start the full child-facing gateway, keep it separate from the parent gateway; the intended service name is `hermes-gateway-learnbuddy-child.service`.
+Before any real child uses it, verify the child profile has no terminal, file, code execution, smart-home, purchasing, generic messaging, or unapproved broad skills/delegation/cron tools enabled. See [`docs/setup-child-profile.md`](docs/setup-child-profile.md). If you start the full child-facing gateway, keep it separate from the parent gateway; install the intended child service with:
+
+```bash
+scripts/install-child-gateway-service.sh --profile learnbuddy-child
+```
+
+Start/enable it only after the child profile `.env` has a dedicated `TELEGRAM_BOT_TOKEN`, allowlists, `TELEGRAM_HOME_CHANNEL`, and `TELEGRAM_FREE_RESPONSE_CHATS`:
+
+```bash
+scripts/install-child-gateway-service.sh --profile learnbuddy-child --enable --start
+```
 
 ## 8. Optional: Telegram delivery
 

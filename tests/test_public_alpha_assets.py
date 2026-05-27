@@ -115,13 +115,17 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
     safety = read_repo_file("docs/child-safety-model.md")
     template = read_repo_file("templates/child-profile/config-snippet.yaml")
     script = read_repo_file("scripts/setup-child-profile.sh")
+    service_script = read_repo_file("scripts/install-child-gateway-service.sh")
 
-    for text in (docs, safety, template, script):
+    for text in (docs, safety, template, script, service_script):
         assert_public_safe_text(text)
 
     required_doc_snippets = [
         "full child-facing Hermes Agent",
         "hermes-gateway-learnbuddy-child.service",
+        "scripts/install-child-gateway-service.sh",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_FREE_RESPONSE_CHATS",
         "capability levels",
         "locked",
         "guided",
@@ -133,7 +137,8 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
     ]
     for snippet in required_doc_snippets:
         assert snippet in docs
-        assert snippet in safety
+        if snippet not in {"scripts/install-child-gateway-service.sh", "TELEGRAM_BOT_TOKEN", "TELEGRAM_FREE_RESPONSE_CHATS"}:
+            assert snippet in safety
 
     required_template_snippets = [
         "capability_level: guided",
@@ -159,6 +164,21 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
     ]
     for snippet in required_script_snippets:
         assert snippet in script
+
+    required_service_script_snippets = [
+        "--start",
+        "--enable",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_ALLOWED_USERS",
+        "TELEGRAM_ALLOWED_CHATS",
+        "TELEGRAM_HOME_CHANNEL",
+        "TELEGRAM_FREE_RESPONSE_CHATS",
+        "matches the default profile token",
+        "ExecStart=${HERMES_BIN} --profile ${PROFILE} gateway run",
+        "systemctl --user daemon-reload",
+    ]
+    for snippet in required_service_script_snippets:
+        assert snippet in service_script
 
 
 def test_public_alpha_scope_is_telegram_first_and_defers_web_api_app() -> None:
