@@ -92,6 +92,24 @@ def test_telegram_quickstart_documents_child_control_messages() -> None:
         assert snippet in text
 
 
+def test_telegram_e2e_smoke_runbook_documents_controlled_flow() -> None:
+    text = read_repo_file("docs/telegram-e2e-smoke.md")
+    required_snippets = [
+        "# Telegram E2E Smoke Runbook",
+        "controlled staging smoke",
+        "Parent creates and sends one exercise",
+        "Child requests help",
+        "Parent receives a bounded help request",
+        "Child answers correctly",
+        "deliver-pending repairs missing delivery metadata",
+        "No live child or parent Telegram message is required",
+        "e2e_smoke=ok",
+    ]
+    assert_public_safe_text(text)
+    for snippet in required_snippets:
+        assert snippet in text
+
+
 def test_demo_exercise_fixture_is_valid_and_public_safe() -> None:
     fixture = ROOT / "examples" / "exercises" / "de" / "grade-5-mixed.jsonl"
     lines = [line for line in fixture.read_text(encoding="utf-8").splitlines() if line.strip()]

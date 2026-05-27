@@ -162,6 +162,7 @@ The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent f
 
 - [`docs/quickstart-telegram.md`](docs/quickstart-telegram.md)
 - [`docs/telegram-command-contracts.md`](docs/telegram-command-contracts.md)
+- [`docs/telegram-e2e-smoke.md`](docs/telegram-e2e-smoke.md)
 - [`docs/setup-child-profile.md`](docs/setup-child-profile.md)
 - [`docs/quickstart-vps.md`](docs/quickstart-vps.md)
 - [`docs/demo-flow.md`](docs/demo-flow.md)
