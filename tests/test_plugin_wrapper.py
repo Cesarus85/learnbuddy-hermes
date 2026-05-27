@@ -34,6 +34,38 @@ def test_plugin_tools_use_isolated_data_dir_and_return_json(tmp_path):
     assert (data_dir / "answers.jsonl").exists()
 
 
+def test_child_submit_answer_notifies_parent_by_default(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "child-answer-notify"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+child:
+  display_name: Alex
+agent:
+  name: BuddyBot
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "1 + 1?",
+        "answer": "2",
+    }))
+    plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": queued["exercise"]["id"]})
+
+    result = json.loads(plugin.learnbuddy_child_submit_answer({"config_path": str(config_path), "answer": "2"}))
+
+    assert result["result"] == "correct"
+    assert result["parent_delivery"]["status"] == "dry_run"
+    assert result["parent_delivery"]["target"] == "parent"
+
+
 def test_plugin_accepts_config_file_for_child_and_agent_identity(tmp_path):
     plugin = load_plugin()
     data_dir = tmp_path / "configured-data"

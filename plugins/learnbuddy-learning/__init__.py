@@ -18,7 +18,7 @@ from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.10"
+PLUGIN_VERSION = "0.1.0-alpha.11"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -166,6 +166,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             **COMMON_PROPERTIES,
             "answer": {"type": "string", "description": "Child answer text for the currently pending exercise."},
             "input_mode": {"type": "string", "enum": ["text", "audio"], "default": "text"},
+            "notify_parent": {"type": "boolean", "default": True, "description": "Notify the configured parent adapter about the answer result. Default true for child profiles."},
         },
         "required": ["answer"],
         "additionalProperties": False,
@@ -422,8 +423,30 @@ def learnbuddy_parent_help_request(args: dict[str, Any] | None = None) -> str:
 
 
 def learnbuddy_child_submit_answer(args: dict[str, Any] | None = None) -> str:
-    """Child-profile alias: submit an answer for the current exercise."""
-    return learnbuddy_submit_answer(args)
+    """Child profile: submit an answer, return child feedback, and notify the parent adapter by default."""
+    child_args = dict(args or {})
+    config = _config(child_args)
+    runtime = _runtime(child_args)
+    pending = runtime.status().get("pending")
+    result = runtime.submit_answer(child_args.get("answer", ""), input_mode=child_args.get("input_mode", "text"))
+    if child_args.get("notify_parent", True) and isinstance(pending, dict) and result.get("result") != "no_pending":
+        prompt = str(pending.get("prompt") or "die offene Aufgabe")
+        answer_text = str(child_args.get("answer", ""))
+        status = "richtig" if result.get("correct") else "noch nicht richtig"
+        if result.get("result") == "exhausted":
+            status = "alle Versuche aufgebraucht"
+        attempts = result.get("attempts")
+        max_attempts = result.get("max_attempts")
+        parent_text = (
+            f"📚 {config.agent_name}: {config.child_name} hat geantwortet in {pending.get('subject', 'general')}\n"
+            f"Aufgabe: {prompt}\n"
+            f"Antwort: {answer_text}\n"
+            f"Ergebnis: {status}, Versuch {attempts}/{max_attempts}."
+        )
+        result["parent_delivery"] = _delivery_adapter(config, recipient="parent").deliver_parent(
+            DeliveryMessage(text=parent_text, metadata={"kind": "child_answer_result", "session_id": pending.get("id")})
+        ).to_dict()
+    return _json(result)
 
 
 def learnbuddy_child_status(args: dict[str, Any] | None = None) -> str:
