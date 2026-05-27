@@ -41,10 +41,10 @@ git clone https://github.com/Cesarus85/learnbuddy-hermes.git
 cd learnbuddy-hermes
 ```
 
-For a tagged release after alpha publication:
+For the latest tagged alpha maintenance release:
 
 ```bash
-git checkout v0.1.0-alpha
+git checkout v0.1.1-alpha
 ```
 
 ## 3. Create an isolated Python environment

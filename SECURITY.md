@@ -6,7 +6,7 @@ LearnBuddy is child-facing software. Treat security bugs as serious even when th
 
 | Version | Support status |
 | --- | --- |
-| `0.1.0-alpha` | Security fixes accepted during alpha preparation |
+| `0.1.x-alpha` | Security fixes accepted during alpha evaluation |
 | earlier commits | Best-effort only |
 
 ## Reporting a vulnerability

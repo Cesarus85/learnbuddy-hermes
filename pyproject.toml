@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "learnbuddy-hermes"
-version = "0.1.0a0"
+version = "0.1.1a0"
 description = "Self-hosted family learning buddy extension pack for Hermes Agent"
 readme = "README.md"
 requires-python = ">=3.11"

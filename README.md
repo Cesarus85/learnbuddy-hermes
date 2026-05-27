@@ -2,7 +2,7 @@
 
 Self-hosted, parent-controlled learning practice for families, built as a Hermes Agent extension pack.
 
-> Status: `0.1.0-alpha` preparation. The current alpha scope is Telegram-first: the core CLI, dry-run delivery, setup, doctor, backup/restore, Telegram contracts, examples, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
+> Status: `0.1.1-alpha` maintenance alpha. The current alpha scope is Telegram-first: the core CLI, dry-run delivery, setup, doctor, backup/restore, Telegram contracts, examples, daily parent status automation, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
 
 ## What this is
 
@@ -38,7 +38,7 @@ Supported design targets:
 
 Current alpha scope: Telegram-first.
 
-That means `0.1.0-alpha` is about a self-hosted Telegram learning loop:
+That means the `0.1.x-alpha` line is about a self-hosted Telegram learning loop:
 
 - parent/admin commands through Hermes + the `learnbuddy_learning` toolset
 - child exercises and answers through a dedicated child Telegram bot or full child-facing Hermes Agent with staged capabilities
