@@ -120,6 +120,8 @@ scripts/setup-child-profile.sh \
   --model your-model
 ```
 
+If `--provider` / `--model` are omitted, the helper copies only non-secret model settings from the default Hermes profile (`provider`, `default`, `base_url`, `context_length`, `max_tokens`). It never copies API keys. This matters because the child gateway still needs a main LLM to route short answers into `learnbuddy_child_submit_answer`; otherwise the child sees a provider-authentication failure instead of feedback.
+
 The script:
 
 - creates the Hermes profile if missing

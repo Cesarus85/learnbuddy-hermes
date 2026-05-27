@@ -164,6 +164,8 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
         "templates/child-profile/SOUL.md",
         "known_plugin_toolsets",
         "disabled_toolsets",
+        "copy_default_model_config_if_needed",
+        "no provider authentication failure",
         "hermes-gateway-${PROFILE}.service",
         "learnbuddy_child",
     ]

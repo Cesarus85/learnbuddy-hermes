@@ -113,6 +113,40 @@ cp templates/child-profile/SOUL.md "$PROFILE_HOME/SOUL.md"
 hermes --profile "$PROFILE" plugins enable learnbuddy-learning || true
 
 PROFILE_CONFIG="$PROFILE_HOME/config.yaml"
+
+copy_default_model_config_if_needed() {
+  # A child gateway still needs a main LLM to route short Telegram answers into
+  # learnbuddy_child_submit_answer. Without a model block, Hermes answers the child
+  # with a provider-auth error instead of evaluating the answer. Copy only
+  # non-secret model settings so the generated profile has no provider authentication failure.
+  "$PYTHON_BIN" - "$HOME/.hermes/config.yaml" "$PROFILE_CONFIG" <<'PY'
+from pathlib import Path
+import sys
+import yaml
+
+source_path = Path(sys.argv[1])
+target_path = Path(sys.argv[2])
+if not source_path.exists() or not target_path.exists():
+    raise SystemExit(0)
+source = yaml.safe_load(source_path.read_text(encoding="utf-8")) or {}
+target = yaml.safe_load(target_path.read_text(encoding="utf-8")) or {}
+if not isinstance(source, dict) or not isinstance(target, dict):
+    raise SystemExit(0)
+current = target.get("model")
+current_ready = isinstance(current, dict) and bool(current.get("provider")) and bool(current.get("default"))
+if current_ready:
+    raise SystemExit(0)
+source_model = source.get("model")
+if not isinstance(source_model, dict) or not source_model.get("provider") or not source_model.get("default"):
+    print("Warning: child profile has no model and default profile has no complete model; pass --provider and --model before starting the child gateway.", file=sys.stderr)
+    raise SystemExit(0)
+allowed = {"provider", "default", "base_url", "context_length", "max_tokens"}
+target["model"] = {key: value for key, value in source_model.items() if key in allowed and value not in (None, "")}
+target_path.write_text(yaml.safe_dump(target, sort_keys=False, allow_unicode=True), encoding="utf-8")
+print("Copied non-secret default model settings into child profile config.")
+PY
+}
+
 "$PYTHON_BIN" - "$PROFILE_CONFIG" "$TELEGRAM_TOOLSETS" "$DISABLED_TOOLSETS" <<'PY'
 from pathlib import Path
 import json
@@ -142,6 +176,8 @@ if not isinstance(agent, dict):
 agent["disabled_toolsets"] = disabled_toolsets
 path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
 PY
+
+copy_default_model_config_if_needed
 
 if [[ -n "$MODEL_PROVIDER" ]]; then
   hermes --profile "$PROFILE" config set model.provider "$MODEL_PROVIDER"
