@@ -41,7 +41,7 @@ Current alpha scope: Telegram-first.
 That means `0.1.0-alpha` is about a self-hosted Telegram learning loop:
 
 - parent/admin commands through Hermes + the `learnbuddy_learning` toolset
-- child exercises and answers through a dedicated child Telegram bot or locked-down child profile
+- child exercises and answers through a dedicated child Telegram bot or full child-facing Hermes Agent with staged capabilities
 - local JSON/JSONL runtime state, backup/restore, doctor checks, and dry-run smokes
 - bounded parent notifications, child help/repeat/next controls, and controlled E2E staging smoke tests
 
@@ -59,7 +59,7 @@ See [`docs/extraction-roadmap.md`](docs/extraction-roadmap.md) for the public-sa
 
 ## Safety baseline
 
-The parent/main Hermes profile may use the broader `learnbuddy_learning` toolset for admin tasks such as creating exercises, reading status, and sending reports. A child who chats directly with LearnBuddy should use a separate locked-down Hermes profile with the narrow `learnbuddy_child` toolset.
+The parent/main Hermes profile may use the broader `learnbuddy_learning` toolset for admin tasks such as creating exercises, reading status, and sending reports. A child who chats directly with LearnBuddy should use a separate full child-facing Hermes Agent profile with the narrow `learnbuddy_child` baseline and age-/maturity-staged optional toolsets.
 
 The child-facing Hermes profile must be least-privilege. Default forbidden toolsets:
 
@@ -70,7 +70,7 @@ The child-facing Hermes profile must be least-privilege. Default forbidden tools
 - generic messaging
 - purchases or external actions
 
-Only bounded LearnBuddy tools should be exposed to the child profile.
+Only bounded LearnBuddy tools should be exposed to the child profile at first. Additional native Hermes features such as `tts`, `vision`, narrow `search`, `skills`, `delegation`, or `cronjob` should be enabled only through documented capability levels, parent approval, audit, and an easy downgrade path.
 
 ## Repository layout
 

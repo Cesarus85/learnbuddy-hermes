@@ -110,6 +110,57 @@ def test_telegram_e2e_smoke_runbook_documents_controlled_flow() -> None:
         assert snippet in text
 
 
+def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
+    docs = read_repo_file("docs/setup-child-profile.md")
+    safety = read_repo_file("docs/child-safety-model.md")
+    template = read_repo_file("templates/child-profile/config-snippet.yaml")
+    script = read_repo_file("scripts/setup-child-profile.sh")
+
+    for text in (docs, safety, template, script):
+        assert_public_safe_text(text)
+
+    required_doc_snippets = [
+        "full child-facing Hermes Agent",
+        "hermes-gateway-learnbuddy-child.service",
+        "capability levels",
+        "locked",
+        "guided",
+        "curious",
+        "teen-supervised",
+        "downgrade",
+        "parent approval",
+        "audit",
+    ]
+    for snippet in required_doc_snippets:
+        assert snippet in docs
+        assert snippet in safety
+
+    required_template_snippets = [
+        "capability_level: guided",
+        "learnbuddy_child",
+        "allowed_optional_toolsets",
+        "parent_approval_required: true",
+        "audit_summary_for_parent: true",
+        "forbidden_toolsets",
+        "terminal",
+        "code_execution",
+        "homeassistant",
+        "messaging",
+    ]
+    for snippet in required_template_snippets:
+        assert snippet in template
+
+    required_script_snippets = [
+        "--capability-level LEVEL",
+        "locked|guided|curious|teen-supervised",
+        "case \"$CAPABILITY_LEVEL\"",
+        "hermes-gateway-${PROFILE}.service",
+        "learnbuddy_child",
+    ]
+    for snippet in required_script_snippets:
+        assert snippet in script
+
+
 def test_public_alpha_scope_is_telegram_first_and_defers_web_api_app() -> None:
     expectations = {
         "README.md": [

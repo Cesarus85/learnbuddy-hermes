@@ -1,16 +1,42 @@
 # Merge into a dedicated child Hermes profile config. Example only.
-# The child profile should expose only the narrow child toolset.
+# The child profile is a full child-facing Hermes Agent with a staged capability model.
+# Parents can downgrade by switching capability_level and reducing platform_toolsets.telegram.
+
+learnbuddy_child_agent:
+  capability_level: guided
+  parent_approval_required: true
+  audit_summary_for_parent: true
+  allowed_optional_toolsets:
+    locked: []
+    guided:
+      - tts
+      - vision
+    curious:
+      - tts
+      - vision
+      - search
+    teen-supervised:
+      - tts
+      - vision
+      - search
+      - skills
+      - delegation
+      - cronjob
+  forbidden_toolsets:
+    - terminal
+    - file
+    - code_execution
+    - homeassistant
+    - messaging
+
 platform_toolsets:
   telegram:
     - learnbuddy_child
     - tts
     - vision
-# Forbidden for child profile by default:
+# Forbidden for child profile by default and in all shipped presets:
 # - terminal
 # - file
 # - code_execution
 # - homeassistant
 # - messaging
-# - skills
-# - delegation
-# - cronjob

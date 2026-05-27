@@ -144,14 +144,15 @@ LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 
 `LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter → persist delivery metadata. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic exercise, respecting daily limit, allowed hours, and current pending state. `learnbuddy_deliver_pending_exercise` repairs/resends the current pending prompt when the learner did not receive it. It also exposes `learnbuddy_parent_help_request` as the public-safe parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, scheduled dispatch is policy-bounded, repair/resend is explicit, help/report pushes require explicit notification flags, and status reads do not send messages.
 
-The parent/main profile can use the broad `learnbuddy_learning` toolset for parent/admin commands. A child-facing profile should be created separately and locked down with only the narrow `learnbuddy_child` toolset. Do not clone a parent/admin profile wholesale.
+The parent/main profile can use the broad `learnbuddy_learning` toolset for parent/admin commands. A child-facing profile should be created separately as a full child-facing Hermes Agent with the `learnbuddy_child` baseline plus explicit capability levels (`locked`, `guided`, `curious`, `teen-supervised`). Do not clone a parent/admin profile wholesale; upgrades need parent approval, audit, and a downgrade path.
 
 Fast path:
 
 ```bash
 scripts/setup-child-profile.sh \
   --profile learnbuddy-child \
-  --config ./learnbuddy.yaml
+  --config ./learnbuddy.yaml \
+  --capability-level guided
 ```
 
 Optional model setup:
@@ -160,6 +161,7 @@ Optional model setup:
 scripts/setup-child-profile.sh \
   --profile learnbuddy-child \
   --config ./learnbuddy.yaml \
+  --capability-level guided \
   --provider your-provider \
   --model your-model
 ```
@@ -171,11 +173,11 @@ hermes profile create learnbuddy-child --no-skills --no-alias
 hermes --profile learnbuddy-child config set model.provider your-provider
 hermes --profile learnbuddy-child config set model.default your-model
 hermes --profile learnbuddy-child plugins enable learnbuddy-learning || true
-hermes --profile learnbuddy-child config set platform_toolsets.telegram '["learnbuddy_child","tts","vision"]'
+hermes --profile learnbuddy-child config set platform_toolsets.telegram '["learnbuddy_child","tts","vision"]'  # guided capability level
 hermes --profile learnbuddy-child config check
 ```
 
-Before any real child uses it, verify the child profile has no terminal, file, code execution, smart-home, purchasing, broad skills/delegation/cron, or generic messaging tools enabled. See [`docs/setup-child-profile.md`](docs/setup-child-profile.md).
+Before any real child uses it, verify the child profile has no terminal, file, code execution, smart-home, purchasing, generic messaging, or unapproved broad skills/delegation/cron tools enabled. See [`docs/setup-child-profile.md`](docs/setup-child-profile.md). If you start the full child-facing gateway, keep it separate from the parent gateway; the intended service name is `hermes-gateway-learnbuddy-child.service`.
 
 ## 8. Optional: Telegram delivery
 
