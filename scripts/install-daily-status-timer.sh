@@ -78,6 +78,11 @@ if [[ -n "$ENV_FILE" ]]; then
   ENV_LINES+=("Environment=LEARNBUDDY_ENV_FILE=${ENV_FILE}")
 fi
 
+EXEC_ARGS=("daily-status" "--notify")
+if [[ -n "$CONFIG_PATH" ]]; then
+  EXEC_ARGS+=("--config" "${CONFIG_PATH}")
+fi
+
 {
   echo "[Unit]"
   echo "Description=LearnBuddy daily parent status (${PROFILE})"
@@ -87,7 +92,11 @@ fi
   for line in "${ENV_LINES[@]}"; do
     echo "$line"
   done
-  echo "ExecStart=${PYTHON_BIN} -m learnbuddy_core.cli daily-status --notify"
+  printf "ExecStart=%s -m learnbuddy_core.cli" "$PYTHON_BIN"
+  for arg in "${EXEC_ARGS[@]}"; do
+    printf " %s" "$arg"
+  done
+  printf "\n"
 } > "$SERVICE_PATH"
 
 cat > "$TIMER_PATH" <<TIMER

@@ -127,6 +127,7 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
         "Persistent=true",
         "pause-today",
         ".venv/bin/python",
+        "--config",
         "python3",
     ]
     for snippet in required_timer_snippets:
