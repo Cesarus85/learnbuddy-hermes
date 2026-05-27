@@ -31,7 +31,9 @@ Safety guardrails before --start/--enable:
   - profile .env should contain TELEGRAM_FREE_RESPONSE_CHATS unless --force is used
   - child token must not match ~/.hermes/.env TELEGRAM_BOT_TOKEN when present
 
-The script never prints token or chat ID values.
+The script never prints token or chat ID values. If your PATH has python3 but not
+python, the script auto-detects it; set PYTHON_BIN=/path/to/python for unusual
+systems.
 USAGE
 }
 
@@ -69,6 +71,18 @@ if ! command -v systemctl >/dev/null 2>&1; then
   exit 1
 fi
 
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+  else
+    echo "No python3/python executable found in PATH. Set PYTHON_BIN=/path/to/python." >&2
+    exit 1
+  fi
+fi
+
 PROFILE_HOME="$HOME/.hermes/profiles/$PROFILE"
 PROFILE_ENV="$PROFILE_HOME/.env"
 UNIT_DIR="$HOME/.config/systemd/user"
@@ -89,7 +103,7 @@ get_env_value() {
   local file="$1"
   local key="$2"
   [[ -f "$file" ]] || return 1
-  python - "$file" "$key" <<'PY'
+  "$PYTHON_BIN" - "$file" "$key" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])

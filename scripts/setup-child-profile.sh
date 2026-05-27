@@ -28,7 +28,8 @@ Options:
   -h, --help            Show this help
 
 The script does NOT write Telegram tokens or chat IDs. Put real secrets in the
-env file yourself and keep it mode 600.
+env file yourself and keep it mode 600. If your PATH has python3 but not python,
+the script auto-detects it; set PYTHON_BIN=/path/to/python for unusual systems.
 USAGE
 }
 
@@ -56,6 +57,18 @@ if ! command -v hermes >/dev/null 2>&1; then
   exit 1
 fi
 
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+  else
+    echo "No python3/python executable found in PATH. Set PYTHON_BIN=/path/to/python." >&2
+    exit 1
+  fi
+fi
+
 case "$CAPABILITY_LEVEL" in
   locked)
     TELEGRAM_TOOLSETS='["learnbuddy_child"]'
@@ -77,7 +90,7 @@ case "$CAPABILITY_LEVEL" in
 esac
 
 if [[ "$SKIP_INSTALL" != "1" ]]; then
-  python -m pip install -e .
+  "$PYTHON_BIN" -m pip install -e .
 fi
 
 if ! hermes profile list 2>/dev/null | grep -Eq "(^|[[:space:]])${PROFILE}([[:space:]]|$)"; then
@@ -102,7 +115,7 @@ fi
 PROFILE_ENV="$PROFILE_HOME/.env"
 touch "$PROFILE_ENV"
 chmod 600 "$PROFILE_ENV"
-python - "$PROFILE_ENV" "$CONFIG_PATH" "$ENV_FILE" <<'PY'
+"$PYTHON_BIN" - "$PROFILE_ENV" "$CONFIG_PATH" "$ENV_FILE" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])

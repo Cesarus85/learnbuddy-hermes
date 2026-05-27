@@ -159,6 +159,7 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
         "--capability-level LEVEL",
         "locked|guided|curious|teen-supervised",
         "case \"$CAPABILITY_LEVEL\"",
+        "PYTHON_BIN",
         "hermes-gateway-${PROFILE}.service",
         "learnbuddy_child",
     ]
@@ -173,6 +174,7 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
         "TELEGRAM_ALLOWED_CHATS",
         "TELEGRAM_HOME_CHANNEL",
         "TELEGRAM_FREE_RESPONSE_CHATS",
+        "PYTHON_BIN",
         "matches the default profile token",
         "ExecStart=${HERMES_BIN} --profile ${PROFILE} gateway run",
         "systemctl --user daemon-reload",
