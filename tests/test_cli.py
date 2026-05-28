@@ -83,6 +83,32 @@ delivery:
     assert {check["name"] for check in report["checks"]} >= {"config", "storage", "delivery"}
 
 
+def test_doctor_reports_unwritable_runtime_files(capsys, tmp_path):
+    data_dir = tmp_path / "runtime-data"
+    data_dir.mkdir()
+    scheduled_file = data_dir / "scheduled_exercises.jsonl"
+    scheduled_file.write_text("", encoding="utf-8")
+    scheduled_file.chmod(0o444)
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    try:
+        assert main(["doctor", "--config", str(config_path)]) == 1
+        out = capsys.readouterr().out
+        assert "check=storage status=error" in out
+        assert "unwritable_files=scheduled_exercises.jsonl" in out
+    finally:
+        scheduled_file.chmod(0o644)
+
+
 def test_doctor_accepts_creatable_storage_path(capsys, tmp_path, monkeypatch):
     hermes_home = tmp_path / "fresh-hermes-home"
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))

@@ -54,8 +54,18 @@ def format_text_report(report: dict[str, Any]) -> str:
 def _storage_check(config: LearnBuddyConfig) -> dict[str, Any]:
     storage = config.resolved_storage_dir()
     existing_ancestor = _nearest_existing_parent(storage)
-    writable = os.access(existing_ancestor, os.W_OK)
-    creatable = not storage.exists() and writable
+    base_writable = os.access(existing_ancestor, os.W_OK)
+    runtime_files = [
+        "state.json",
+        "exercises.jsonl",
+        "sessions.jsonl",
+        "answers.jsonl",
+        "help_requests.jsonl",
+        "scheduled_exercises.jsonl",
+    ]
+    unwritable_files = [name for name in runtime_files if (storage / name).exists() and not os.access(storage / name, os.W_OK)]
+    writable = base_writable and not unwritable_files
+    creatable = not storage.exists() and base_writable
     return {
         "name": "storage",
         "status": "ok" if writable else "error",
@@ -64,6 +74,7 @@ def _storage_check(config: LearnBuddyConfig) -> dict[str, Any]:
         "parent_exists": storage.parent.exists(),
         "parent_writable": os.access(storage.parent, os.W_OK) if storage.parent.exists() else False,
         "creatable": creatable,
+        "unwritable_files": unwritable_files,
     }
 
 
@@ -106,7 +117,7 @@ def _telegram_env_check(name: str, token_env: str, chat_env: str) -> dict[str, A
 
 def _format_check(check: dict[str, Any]) -> str:
     fields: list[str] = [f"check={check['name']}", f"status={check['status']}"]
-    for key in ["missing", "mode", "path", "exists", "parent_exists", "parent_writable", "creatable", "error"]:
+    for key in ["missing", "mode", "path", "exists", "parent_exists", "parent_writable", "creatable", "unwritable_files", "error"]:
         if key not in check:
             continue
         value = check[key]
