@@ -595,6 +595,69 @@ delivery:
     assert "Antworten: noch keine abgegeben" in result["report"]["text"]
 
 
+def test_cli_weekly_status_summarizes_recommendations_and_skips_duplicate(capsys, tmp_path):
+    data_dir = tmp_path / "cli-weekly-status-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Robin
+agent:
+  name: StudyFox
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["queue", "--config", str(config_path), "--subject", "math", "--prompt", "8 + 1?", "--answer", "9"]) == 0
+    exercise_id = json.loads(capsys.readouterr().out)["exercise"]["id"]
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
+    capsys.readouterr()
+    assert main(["answer", "--config", str(config_path), "3"]) == 0
+    capsys.readouterr()
+
+    assert main(["weekly-status", "--config", str(config_path), "--notify", "--now", "2026-05-31T19:00:00+02:00"]) == 0
+    first = json.loads(capsys.readouterr().out)
+
+    assert first["status"] == "sent"
+    assert first["report"]["week_key"] == "2026-05-25/2026-05-31"
+    assert first["report"]["answers"] == 1
+    assert first["report"]["correct"] == 0
+    assert first["notification"]["status"] == "dry_run"
+    assert "Wochenbericht" in first["report"]["text"]
+    assert "Empfehlungen" in first["report"]["text"]
+    assert first["report"]["recommendations"]
+
+    assert main(["weekly-status", "--config", str(config_path), "--notify", "--now", "2026-05-31T20:00:00+02:00"]) == 0
+    duplicate = json.loads(capsys.readouterr().out)
+    assert duplicate["status"] == "already_sent"
+    assert duplicate["notification"] is None
+
+
+def test_cli_weekly_status_respects_pause_today(capsys, tmp_path):
+    data_dir = tmp_path / "cli-weekly-pause-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main(["automation", "--config", str(config_path), "pause-today", "--now", "2026-05-31T10:00:00+02:00"]) == 0
+    capsys.readouterr()
+    assert main(["weekly-status", "--config", str(config_path), "--notify", "--include-empty", "--now", "2026-05-31T19:00:00+02:00"]) == 0
+    skipped = json.loads(capsys.readouterr().out)
+
+    assert skipped["status"] == "automation_paused"
+    assert skipped["notification"] is None
+
+
 def test_cli_help_request_records_and_can_notify_parent(capsys, tmp_path):
     data_dir = tmp_path / "cli-help-data"
     config_path = tmp_path / "learnbuddy.yaml"

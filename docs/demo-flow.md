@@ -7,7 +7,7 @@ This is a complete public-alpha smoke path using synthetic data only. It is safe
 Prove the full lifecycle:
 
 ```text
-setup -> doctor -> queue -> schedule-exercise -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> report --notify -> backup -> restore
+setup -> doctor -> queue -> schedule-exercise -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> weekly-status --notify -> report --notify -> backup -> restore
 ```
 
 No Telegram token, chat ID, production child data, or private deployment path is needed.
@@ -95,12 +95,13 @@ learnbuddy answer --config ./learnbuddy.yaml "56"
 
 Expected result: `correct` is true and the pending exercise is completed.
 
-## 7. Check status and parent report
+## 7. Check status and parent reports
 
-This covers the `learnbuddy report --notify` parent-notification step.
+This covers the weekly parent-status automation and the manual `learnbuddy report --notify` parent-notification step. Weekly status is scheduler-safe: it respects pause-today, once-per-week, and empty-week guards.
 
 ```bash
 learnbuddy status --config ./learnbuddy.yaml
+learnbuddy weekly-status --notify --config ./learnbuddy.yaml
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 

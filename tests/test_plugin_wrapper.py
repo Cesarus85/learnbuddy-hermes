@@ -465,6 +465,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_parent_answer_status",
         "learnbuddy_parent_report",
         "learnbuddy_daily_parent_status",
+        "learnbuddy_weekly_parent_status",
         "learnbuddy_parent_automation_control",
         "learnbuddy_parent_help_request",
         "learnbuddy_child_submit_answer",
@@ -513,9 +514,14 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert "recent answer" in ctx.tools["learnbuddy_parent_answer_status"]["schema"]["description"].lower()
     assert report_schema["properties"]["notify"]["default"] is False
     daily_schema = ctx.tools["learnbuddy_daily_parent_status"]["schema"]["parameters"]
+    weekly_schema = ctx.tools["learnbuddy_weekly_parent_status"]["schema"]["parameters"]
     automation_schema = ctx.tools["learnbuddy_parent_automation_control"]["schema"]["parameters"]
     assert daily_schema["properties"]["notify"]["default"] is False
     assert daily_schema["properties"]["include_empty"]["default"] is False
+    assert weekly_schema["properties"]["notify"]["default"] is False
+    assert weekly_schema["properties"]["include_empty"]["default"] is False
+    assert ctx.tools["learnbuddy_weekly_parent_status"]["toolset"] == "learnbuddy_learning"
+    assert "weekly parent report" in ctx.tools["learnbuddy_weekly_parent_status"]["schema"]["description"].lower()
     assert automation_schema["required"] == ["action"]
     assert automation_schema["properties"]["action"]["enum"] == ["status", "pause_today", "resume"]
 
@@ -548,7 +554,7 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
 
     assert contracts["status"] == "ok"
     operations = {item["operation"]: item for item in contracts["contracts"]}
-    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "automation_control", "resend_pending", "dispatch_plan", "create_and_send_exercise", "schedule_exercise"}
+    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "weekly_status", "automation_control", "resend_pending", "dispatch_plan", "create_and_send_exercise", "schedule_exercise"}
     assert operations["current_status"]["tool"] == "learnbuddy_learning_status"
     assert "Was ist offen?" in operations["current_status"]["examples"]
     assert operations["answer_status"]["tool"] == "learnbuddy_parent_answer_status"
@@ -558,6 +564,9 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert operations["report"]["notify_default"] is False
     assert operations["daily_status"]["tool"] == "learnbuddy_daily_parent_status"
     assert operations["daily_status"]["policy_bounded"] is True
+    assert operations["weekly_status"]["tool"] == "learnbuddy_weekly_parent_status"
+    assert operations["weekly_status"]["policy_bounded"] is True
+    assert "Wochenbericht" in operations["weekly_status"]["examples"]
     assert operations["automation_control"]["tool"] == "learnbuddy_parent_automation_control"
     assert "heute pausieren" in operations["automation_control"]["examples"]
     assert operations["resend_pending"]["tool"] == "learnbuddy_deliver_pending_exercise"
@@ -604,6 +613,16 @@ delivery:
         "config_path": str(config_path),
         "notify": True,
     }))
+    weekly = json.loads(plugin.learnbuddy_weekly_parent_status({
+        "config_path": str(config_path),
+        "notify": True,
+        "now": "2026-05-31T19:00:00+02:00",
+    }))
+    duplicate_weekly = json.loads(plugin.learnbuddy_weekly_parent_status({
+        "config_path": str(config_path),
+        "notify": True,
+        "now": "2026-05-31T20:00:00+02:00",
+    }))
     duplicate = json.loads(plugin.learnbuddy_daily_parent_status({
         "config_path": str(config_path),
         "notify": True,
@@ -623,6 +642,10 @@ delivery:
 
     assert first["status"] == "sent"
     assert first["notification"]["status"] == "dry_run"
+    assert weekly["status"] == "sent"
+    assert weekly["notification"]["status"] == "dry_run"
+    assert weekly["report"]["week_key"] == "2026-05-25/2026-05-31"
+    assert duplicate_weekly["status"] == "already_sent"
     assert duplicate["status"] == "already_sent"
     assert paused["status"] == "paused"
     assert skipped["status"] == "automation_paused"

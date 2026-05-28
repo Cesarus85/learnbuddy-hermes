@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +72,7 @@ def test_public_docs_include_telegram_parent_command_contracts() -> None:
         "learnbuddy_learning_status",
         "learnbuddy_parent_report",
         "learnbuddy_daily_parent_status",
+        "learnbuddy_weekly_parent_status",
         "learnbuddy_parent_automation_control",
         "heute pausieren",
         "learnbuddy_deliver_pending_exercise",
@@ -79,6 +83,7 @@ def test_public_docs_include_telegram_parent_command_contracts() -> None:
         "Frage Learner folgende Aufgaben",
         "scripts/setup-parent-profile.sh",
         "scripts/install-daily-status-timer.sh",
+        "scripts/install-weekly-status-timer.sh",
         "scripts/install-dispatch-timer.sh",
         "Web/PWA",
     ]
@@ -91,10 +96,11 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
     soul = read_repo_file("templates/parent-profile/SOUL.md")
     script = read_repo_file("scripts/setup-parent-profile.sh")
     daily_timer = read_repo_file("scripts/install-daily-status-timer.sh")
+    weekly_timer = read_repo_file("scripts/install-weekly-status-timer.sh")
     dispatch_timer = read_repo_file("scripts/install-dispatch-timer.sh")
     install = read_repo_file("INSTALL.md")
 
-    for text in (soul, script, daily_timer, dispatch_timer, install):
+    for text in (soul, script, daily_timer, weekly_timer, dispatch_timer, install):
         assert_public_safe_text(text)
 
     required_soul_snippets = [
@@ -104,6 +110,7 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
         "learnbuddy_schedule_exercise",
         "learnbuddy_dispatch_plan",
         "learnbuddy_daily_parent_status",
+        "learnbuddy_weekly_parent_status",
         "learnbuddy_parent_automation_control",
         "answer_or_expected_answers",
         "Do not call",
@@ -138,6 +145,19 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
     for snippet in required_timer_snippets:
         assert snippet in daily_timer
     assert "scripts/install-daily-status-timer.sh" in install
+    required_weekly_timer_snippets = [
+        "learnbuddy weekly-status --notify",
+        "OnCalendar",
+        "Persistent=true",
+        ".venv/bin/python",
+        "--config",
+        "python3",
+        "once-per-week",
+        "empty-week",
+    ]
+    for snippet in required_weekly_timer_snippets:
+        assert snippet in weekly_timer
+    assert "scripts/install-weekly-status-timer.sh" in install
     required_dispatch_timer_snippets = [
         "learnbuddy dispatch-plan",
         "OnUnitActiveSec",
@@ -353,6 +373,7 @@ def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
         "learnbuddy next --deliver",
         "learnbuddy deliver-pending",
         "learnbuddy report --notify",
+        "learnbuddy weekly-status --notify",
         "delivery.mode: dry_run",
         "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN",
         "hermes plugins",
@@ -377,6 +398,7 @@ def test_demo_flow_documents_full_public_smoke_path() -> None:
         "learnbuddy next --deliver",
         "learnbuddy deliver-pending",
         "learnbuddy answer",
+        "learnbuddy weekly-status --notify",
         "learnbuddy report --notify",
         "learnbuddy backup",
         "learnbuddy restore",
@@ -385,3 +407,59 @@ def test_demo_flow_documents_full_public_smoke_path() -> None:
     ]
     for snippet in required_snippets:
         assert snippet in text
+
+
+def test_weekly_status_timer_installer_writes_expected_systemd_units(tmp_path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    systemctl_log = tmp_path / "systemctl.log"
+    fake_systemctl = fake_bin / "systemctl"
+    fake_systemctl.write_text(
+        "#!/usr/bin/env bash\n"
+        f"printf '%s\\n' \"$*\" >> {systemctl_log}\n",
+        encoding="utf-8",
+    )
+    fake_systemctl.chmod(0o755)
+
+    env = dict(os.environ)
+    env["HOME"] = str(tmp_path)
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+    result = subprocess.run(
+        [
+            "bash",
+            str(ROOT / "scripts/install-weekly-status-timer.sh"),
+            "--profile",
+            "demo",
+            "--config",
+            "/tmp/learnbuddy.yaml",
+            "--env-file",
+            "/tmp/learnbuddy.env",
+            "--on-calendar",
+            "Sun 18:30",
+            "--enable",
+            "--start",
+            "--python",
+            sys.executable,
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    service = tmp_path / ".config/systemd/user/learnbuddy-weekly-status-demo.service"
+    timer = tmp_path / ".config/systemd/user/learnbuddy-weekly-status-demo.timer"
+    service_text = service.read_text(encoding="utf-8")
+    timer_text = timer.read_text(encoding="utf-8")
+    systemctl_calls = systemctl_log.read_text(encoding="utf-8")
+
+    assert "learnbuddy weekly-status --notify" in result.stdout
+    assert "Environment=LEARNBUDDY_CONFIG_PATH=/tmp/learnbuddy.yaml" in service_text
+    assert "Environment=LEARNBUDDY_ENV_FILE=/tmp/learnbuddy.env" in service_text
+    assert f"ExecStart={sys.executable} -m learnbuddy_core.cli weekly-status --notify --config /tmp/learnbuddy.yaml" in service_text
+    assert "OnCalendar=Sun 18:30" in timer_text
+    assert "Persistent=true" in timer_text
+    assert "daemon-reload" in systemctl_calls
+    assert "enable learnbuddy-weekly-status-demo.timer" in systemctl_calls
+    assert "start learnbuddy-weekly-status-demo.timer" in systemctl_calls

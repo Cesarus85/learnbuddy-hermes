@@ -79,6 +79,7 @@ learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
 learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy daily-status --config ./learnbuddy.yaml --notify
+learnbuddy weekly-status --config ./learnbuddy.yaml --notify
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 
@@ -90,8 +91,9 @@ Expected behavior:
 - `deliver-pending` repairs/resends the current pending prompt if the learner never saw it.
 - `report --notify` sends a parent summary through the parent adapter when configured.
 - `daily-status --notify` sends at most one local-day parent status with started tasks, latest answers, attempt history, and subject totals. It skips truly empty days by default and respects `automation pause-today` / parent `heute pausieren` controls. Install it with `scripts/install-daily-status-timer.sh` only after dry-run smoke tests are green.
+- `weekly-status --notify` sends at most one local-week parent report with subject totals and compact next-week recommendations. It skips empty weeks by default and uses the same pause guard. Install it with `scripts/install-weekly-status-timer.sh` for Sunday reports after daily-status and dispatch timers are verified.
 - `watch-telegram-answers` evaluates Kids-bot replies; when there is no answer it repairs any undelivered pending prompt, and after a correct/exhausted answer it promotes and delivers the next queued exercise automatically.
-- `learnbuddy_parent_command_contracts` documents the supported parent Telegram operation mapping: status, report, resend pending, scheduled dispatch, and create/send exercise.
+- `learnbuddy_parent_command_contracts` documents the supported parent Telegram operation mapping: status, daily/weekly reports, resend pending, scheduled dispatch, and create/send exercise.
 - Child control messages are handled before answer evaluation: `Nochmal`/`nochmal senden` resends the pending prompt without incrementing attempts; `Hilfe`/`Ich weiß nicht` records a bounded parent-help request, confirms this to the child, and notifies parents when parent notifications are enabled; `Noch eine`/`Noch eine Aufgabe` is bounded by the same scheduler policy as `dispatch-plan`, never creates free-form tasks, and notifies parents with a help request when the child asks for another task but LearnBuddy cannot open one.
 - Missing or invalid Telegram configuration returns a safe error/not-configured status rather than leaking credentials.
 

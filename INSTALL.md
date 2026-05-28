@@ -229,6 +229,18 @@ scripts/install-daily-status-timer.sh \
 
 The installer auto-detects a project `.venv/bin/python` or sibling `../.venv/bin/python` when run from a source checkout; pass `--python` explicitly for nonstandard venv layouts. The generated systemd user timer runs `learnbuddy daily-status --notify`. The command is safe for unattended use: it reports started tasks, latest answers, attempts, and subject totals; skips truly empty days by default; sends at most once per local date; and respects parent `heute pausieren` / `learnbuddy_parent_automation_control action=pause_today`.
 
+Optional Sunday weekly report with compact recommendations:
+
+```bash
+scripts/install-weekly-status-timer.sh \
+  --config ./learnbuddy.yaml \
+  --on-calendar "Sun 19:00" \
+  --python ./.venv/bin/python \
+  --enable --start
+```
+
+This writes a systemd user timer that runs `learnbuddy weekly-status --notify`. It summarizes the current local week, includes next-week recommendations, skips empty weeks by default, sends at most once per week, and uses the same parent automation pause guard as daily status.
+
 ## 8. Optional: Telegram delivery
 
 Keep Telegram off until the dry-run flow works.

@@ -35,6 +35,14 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 - Rule: scheduler-safe and bounded. It renders one local-day report with started tasks, latest answer per task, attempt history, and subject totals; respects `heute pausieren`/`pause_today`; skips duplicate sends for the same local date; and skips truly empty days (no started tasks and no answers) unless `include_empty=true`.
 - Installable timer: `scripts/install-daily-status-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy daily-status --notify`. The installer auto-detects project/sibling `.venv/bin/python` when run from a source checkout, but explicit `--python` is safest for VPS/staging layouts.
 
+### Weekly parent report
+
+- Parent examples: `Wochenbericht`, `Schick den Wochenstatus`, `Wie lief diese Woche?`
+- Tool: `learnbuddy_weekly_parent_status`
+- Default args: `notify=false`, `include_empty=false`, `force=false`
+- Rule: scheduler-safe and bounded. It renders one local-week report with started tasks, final answers, attempt history, subject totals, and compact next-week recommendations; respects `heute pausieren`/`pause_today`; skips duplicate sends for the same local week; and skips truly empty weeks unless `include_empty=true`.
+- Installable timer: `scripts/install-weekly-status-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy weekly-status --notify`, typically on Sunday evening.
+
 ### Parent automation control
 
 - Parent examples: `heute pausieren`, `Lernbot heute aus`, `weiter`, `Automatik wieder an`

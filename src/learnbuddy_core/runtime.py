@@ -7,7 +7,7 @@ profiles can be wired to it later through adapters.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -106,6 +106,22 @@ def _short_local_date(timestamp: Any, timezone_name: str) -> str | None:
     except ValueError:
         raw = str(timestamp)
         return raw[:10] if len(raw) >= 10 else None
+
+
+def _week_bounds(local_now: datetime) -> tuple[datetime, datetime, str]:
+    start = (local_now - timedelta(days=local_now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
+    return start, end, f"{start.date().isoformat()}/{end.date().isoformat()}"
+
+
+def _inside_local_range(timestamp: Any, start: datetime, end: datetime, timezone_name: str) -> bool:
+    if not timestamp:
+        return False
+    try:
+        local_timestamp = _local_datetime(str(timestamp), timezone_name)
+    except ValueError:
+        return False
+    return start <= local_timestamp <= end
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -470,6 +486,78 @@ class LearnBuddyRuntime:
             "text": "\n".join(lines),
         }
 
+    def parent_weekly_report(self, *, now: str | None = None, timezone_name: str = "Europe/Berlin") -> dict[str, Any]:
+        """Render a parent weekly report with bounded recommendations for the current local week."""
+        local_now = _local_datetime(now, timezone_name)
+        week_start, week_end, week_key = _week_bounds(local_now)
+        all_sessions = _read_jsonl(self.paths.sessions)
+        sessions_week = [row for row in all_sessions if _inside_local_range(row.get("timestamp"), week_start, week_end, timezone_name)]
+        answers_week = [row for row in _read_jsonl(self.paths.answers) if _inside_local_range(row.get("timestamp"), week_start, week_end, timezone_name)]
+        final_answers, histories = _latest_answers_by_exercise(answers_week)
+        sessions_by_exercise = {str(row.get("exercise_id") or ""): row for row in all_sessions if row.get("exercise_id")}
+        correct = sum(1 for row in final_answers if row.get("correct") is True)
+        exhausted = sum(1 for row in final_answers if row.get("exhausted") is True)
+        subjects: dict[str, dict[str, int]] = {}
+        review_topics: list[str] = []
+        for row in final_answers:
+            subject = str(row.get("subject") or "general")
+            bucket = subjects.setdefault(subject, {"answers": 0, "correct": 0})
+            bucket["answers"] += 1
+            if row.get("correct") is True:
+                bucket["correct"] += 1
+            else:
+                topic = str(row.get("topic") or row.get("type") or row.get("subject") or "unklar")
+                if topic not in review_topics:
+                    review_topics.append(topic)
+
+        recommendations: list[str] = []
+        if review_topics:
+            recommendations.append("Nächste Woche sanft wiederholen: " + ", ".join(review_topics[:3]))
+        if subjects:
+            weakest = sorted(subjects.items(), key=lambda item: (item[1]["correct"] / max(item[1]["answers"], 1), item[0]))[0]
+            if weakest[1]["answers"] and weakest[1]["correct"] < weakest[1]["answers"]:
+                recommendations.append(f"Etwas mehr {_subject_label(weakest[0])} einplanen, aber kurz halten.")
+        if not recommendations and final_answers:
+            recommendations.append("Nächste Woche ähnlich weitermachen und eine kleine Stufe schwerer versuchen.")
+        if not recommendations:
+            recommendations.append("Noch keine Lernaktivität in dieser Woche — erst eine kurze Aufgabe starten.")
+
+        lines = [
+            f"📚 {self.agent_name} Wochenbericht für {self.child_name} ({week_start.date().isoformat()}–{week_end.date().isoformat()})",
+            f"- Neu gestartete Aufgaben: {len(sessions_week)}",
+            f"- Final beantwortete Aufgaben: {len(final_answers)}",
+        ]
+        if len(answers_week) != len(final_answers):
+            lines.append(f"- Antworten/Versuche insgesamt: {len(answers_week)}")
+        if final_answers:
+            lines.append(f"- Gesamt: {correct}/{len(final_answers)} Aufgaben final richtig")
+            for subject, total in sorted(subjects.items()):
+                lines.append(f"- {_subject_label(subject)}: {total['correct']}/{total['answers']} richtig")
+            lines.append("\nBeantwortete Aufgaben diese Woche:")
+            lines.extend(self._daily_answer_detail_lines(final_answers, histories, sessions_by_exercise, timezone_name=timezone_name))
+        else:
+            lines.append("- Antworten: noch keine abgegeben")
+        lines.append("\nEmpfehlungen:")
+        lines.extend(f"- {item}" for item in recommendations)
+        lines.append("\nWochenbericht — kompakt, parent-facing, ohne rohe Chatlogs.")
+        return {
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
+            "week_start": week_start.date().isoformat(),
+            "week_end": week_end.date().isoformat(),
+            "week_key": week_key,
+            "timezone": timezone_name,
+            "sessions_started": len(sessions_week),
+            "answers": len(final_answers),
+            "answer_attempts": len(answers_week),
+            "correct": correct,
+            "exhausted": exhausted,
+            "subjects": subjects,
+            "recommendations": recommendations,
+            "text": "\n".join(lines),
+        }
+
     def _daily_answer_detail_lines(
         self,
         answers: list[dict[str, Any]],
@@ -591,6 +679,29 @@ class LearnBuddyRuntime:
         automation = state.get("automation") if isinstance(state.get("automation"), dict) else {}
         daily = automation.get("daily_status") if isinstance(automation.get("daily_status"), dict) else {}
         return dict(daily)
+
+    def mark_weekly_parent_status(self, *, week_key: str, delivery_result: dict[str, Any] | None = None, status: str) -> dict[str, Any]:
+        state = self._state()
+        automation = state.get("automation") if isinstance(state.get("automation"), dict) else {}
+        weekly = automation.get("weekly_status") if isinstance(automation.get("weekly_status"), dict) else {}
+        weekly.update({
+            "last_status": status,
+            "last_checked_week": week_key,
+            "updated_at": _now(),
+        })
+        if delivery_result is not None:
+            weekly["last_sent_week"] = week_key
+            weekly["last_delivery"] = delivery_result
+        automation["weekly_status"] = weekly
+        state["automation"] = automation
+        self._write_state(state)
+        return weekly
+
+    def weekly_parent_status_state(self) -> dict[str, Any]:
+        state = self._state()
+        automation = state.get("automation") if isinstance(state.get("automation"), dict) else {}
+        weekly = automation.get("weekly_status") if isinstance(automation.get("weekly_status"), dict) else {}
+        return dict(weekly)
 
     def parent_answer_status(self, *, limit: int = 3) -> dict[str, Any]:
         """Return recent answer history for parent status questions."""

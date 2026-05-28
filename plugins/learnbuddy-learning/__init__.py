@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from learnbuddy_core.cli import _auto_sessions_today, _inside_allowed_hours, _parse_datetime, run_daily_parent_status
+from learnbuddy_core.cli import _auto_sessions_today, _inside_allowed_hours, _parse_datetime, run_daily_parent_status, run_weekly_parent_status
 from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
 from learnbuddy_core.notifier import ParentNotifier
@@ -19,7 +19,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.17"
+PLUGIN_VERSION = "0.1.0-alpha.18"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -48,6 +48,14 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
         "notify_default": False,
         "policy_bounded": True,
         "policy": "One daily parent status. Respects pause-today and once-per-day guards; empty days are skipped unless include_empty=true.",
+    },
+    {
+        "operation": "weekly_status",
+        "tool": "learnbuddy_weekly_parent_status",
+        "examples": ["Wochenbericht", "Schick den Wochenstatus", "Wie lief diese Woche?"],
+        "notify_default": False,
+        "policy_bounded": True,
+        "policy": "One weekly parent report with compact recommendations. Respects pause-today and once-per-week guards; empty weeks are skipped unless include_empty=true.",
     },
     {
         "operation": "automation_control",
@@ -204,6 +212,17 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "notify": {"type": "boolean", "default": False, "description": "Send the daily status to the configured parent adapter when true."},
             "include_empty": {"type": "boolean", "default": False, "description": "Send even when no answers were recorded for the local day."},
             "force": {"type": "boolean", "default": False, "description": "Ignore the once-per-day send guard."},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
+        },
+        "additionalProperties": False,
+    },
+    "learnbuddy_weekly_parent_status": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "notify": {"type": "boolean", "default": False, "description": "Send the weekly report to the configured parent adapter when true."},
+            "include_empty": {"type": "boolean", "default": False, "description": "Send even when no sessions or answers were recorded for the local week."},
+            "force": {"type": "boolean", "default": False, "description": "Ignore the once-per-week send guard."},
             "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
         },
         "additionalProperties": False,
@@ -567,6 +586,21 @@ def learnbuddy_daily_parent_status(args: dict[str, Any] | None = None) -> str:
     ))
 
 
+def learnbuddy_weekly_parent_status(args: dict[str, Any] | None = None) -> str:
+    """Render/send one weekly parent report with recommendations and duplicate guards."""
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    return _json(run_weekly_parent_status(
+        config,
+        runtime,
+        notify=bool(args.get("notify", False)),
+        include_empty=bool(args.get("include_empty", False)),
+        force=bool(args.get("force", False)),
+        now=args.get("now"),
+    ))
+
+
 def learnbuddy_parent_automation_control(args: dict[str, Any] | None = None) -> str:
     """Inspect, pause, or resume parent-facing scheduled automation."""
     args = dict(args or {})
@@ -712,6 +746,7 @@ TOOLS = [
     ("learnbuddy_parent_answer_status", learnbuddy_parent_answer_status, "learnbuddy_learning", "Show recent answer status for parents, including the latest prompt, answer result, and parent notification delivery record."),
     ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
     ("learnbuddy_daily_parent_status", learnbuddy_daily_parent_status, "learnbuddy_learning", "Scheduler-safe daily parent status: one local-day report with pause, duplicate, and empty-day guards."),
+    ("learnbuddy_weekly_parent_status", learnbuddy_weekly_parent_status, "learnbuddy_learning", "Scheduler-safe weekly parent report: current-week summary, recommendations, pause, duplicate, and empty-week guards."),
     ("learnbuddy_parent_automation_control", learnbuddy_parent_automation_control, "learnbuddy_learning", "Inspect, pause today, or resume LearnBuddy parent-facing scheduled automation."),
     ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "learnbuddy_learning", "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
     ("learnbuddy_child_submit_answer", learnbuddy_child_submit_answer, "learnbuddy_child", "Child profile: submit an answer for the current LearnBuddy exercise. No file, terminal, or generic messaging access."),

@@ -304,11 +304,58 @@ def run_daily_parent_status(
     return {"status": status, "daily_status": daily, "report": report, "notification": notification}
 
 
+def run_weekly_parent_status(
+    config: LearnBuddyConfig,
+    runtime: LearnBuddyRuntime,
+    *,
+    notify: bool = False,
+    include_empty: bool = False,
+    force: bool = False,
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Render and optionally deliver one bounded weekly parent status report."""
+    local_now = _parse_datetime(now, config.timezone)
+    automation = runtime.parent_automation_status(now=local_now.isoformat(), timezone_name=config.timezone)
+    if automation.get("paused"):
+        return {"status": "automation_paused", "automation": automation, "report": None, "notification": None}
+    report = runtime.parent_weekly_report(now=local_now.isoformat(), timezone_name=config.timezone)
+    week_key = str(report.get("week_key") or "")
+    weekly_state = runtime.weekly_parent_status_state()
+    if weekly_state.get("last_sent_week") == week_key and not force:
+        return {"status": "already_sent", "weekly_status": weekly_state, "report": None, "notification": None}
+    if int(report.get("answers") or 0) == 0 and int(report.get("sessions_started") or 0) == 0 and not include_empty:
+        weekly = runtime.mark_weekly_parent_status(week_key=week_key, status="no_activity")
+        return {"status": "no_activity", "weekly_status": weekly, "report": report, "notification": None}
+    notification = None
+    status = "rendered"
+    if notify:
+        notification = ParentNotifier(delivery_adapter_from_config(config, recipient="parent")).notify_report(report).to_dict()
+        status = "sent" if _delivery_succeeded(notification.get("status")) else str(notification.get("status") or "error")
+    weekly = runtime.mark_weekly_parent_status(week_key=week_key, delivery_result=notification if status == "sent" else None, status=status)
+    return {"status": status, "weekly_status": weekly, "report": report, "notification": notification}
+
+
 def cmd_daily_status(args: argparse.Namespace) -> int:
     load_env_file(os.getenv("LEARNBUDDY_ENV_FILE"))
     config = _config_from_args(args)
     runtime = _runtime_from_args(args, config)
     result = run_daily_parent_status(
+        config,
+        runtime,
+        notify=args.notify,
+        include_empty=args.include_empty,
+        force=args.force,
+        now=args.now,
+    )
+    _print_json(result)
+    return 0
+
+
+def cmd_weekly_status(args: argparse.Namespace) -> int:
+    load_env_file(os.getenv("LEARNBUDDY_ENV_FILE"))
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    result = run_weekly_parent_status(
         config,
         runtime,
         notify=args.notify,
@@ -447,6 +494,14 @@ def build_parser() -> argparse.ArgumentParser:
     daily_status.add_argument("--force", action="store_true", help="ignore the once-per-day send guard")
     daily_status.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
     daily_status.set_defaults(func=cmd_daily_status)
+
+    weekly_status = sub.add_parser("weekly-status", help="render/send one weekly parent report with recommendations and duplicate guards")
+    _add_runtime_options(weekly_status)
+    weekly_status.add_argument("--notify", action="store_true", help="deliver the weekly status to the configured parent adapter")
+    weekly_status.add_argument("--include-empty", action="store_true", help="send even when no sessions or answers were recorded for the local week")
+    weekly_status.add_argument("--force", action="store_true", help="ignore the once-per-week send guard")
+    weekly_status.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
+    weekly_status.set_defaults(func=cmd_weekly_status)
 
     automation = sub.add_parser("automation", help="inspect or control parent-facing scheduled automation")
     _add_runtime_options(automation)
