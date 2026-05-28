@@ -20,7 +20,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.2-alpha"
+PLUGIN_VERSION = "0.1.3-alpha"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {

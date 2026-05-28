@@ -44,7 +44,7 @@ cd learnbuddy-hermes
 For the latest tagged alpha release:
 
 ```bash
-git checkout v0.1.2-alpha
+git checkout v0.1.3-alpha
 ```
 
 ## 3. Optional fast path: Docker Compose quickstart

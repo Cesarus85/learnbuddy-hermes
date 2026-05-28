@@ -2,7 +2,7 @@
 
 Self-hosted, parent-controlled learning practice for families, built as a Hermes Agent extension pack.
 
-> Status: `0.1.2-alpha` installability alpha. The current alpha scope is Telegram-first: the core CLI, public grade-5 exercise seed pack, setup, doctor, backup/restore, Telegram contracts, examples, parent status automation, learning plans, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
+> Status: `0.1.3-alpha` installability alpha. The current alpha scope is Telegram-first: the core CLI, public grade-5 exercise seed pack, setup, doctor, backup/restore, Telegram contracts, examples, parent status automation, learning plans, material review/file import, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
 
 ## What this is
 

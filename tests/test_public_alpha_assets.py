@@ -48,12 +48,12 @@ def test_public_release_versions_are_consistent() -> None:
     readme = read_repo_file("README.md")
     install = read_repo_file("INSTALL.md")
 
-    assert 'version = "0.1.2a0"' in pyproject
-    assert '__version__ = "0.1.2a0"' in package_init
-    assert "version: 0.1.2-alpha" in plugin_yaml
-    assert 'PLUGIN_VERSION = "0.1.2-alpha"' in plugin_init
-    assert "0.1.2-alpha" in readme
-    assert "git checkout v0.1.2-alpha" in install
+    assert 'version = "0.1.3a0"' in pyproject
+    assert '__version__ = "0.1.3a0"' in package_init
+    assert "version: 0.1.3-alpha" in plugin_yaml
+    assert 'PLUGIN_VERSION = "0.1.3-alpha"' in plugin_init
+    assert "0.1.3-alpha" in readme
+    assert "git checkout v0.1.3-alpha" in install
 
 
 def test_public_alpha_docs_are_not_stub_placeholders() -> None:
