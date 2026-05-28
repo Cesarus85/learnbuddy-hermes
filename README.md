@@ -2,7 +2,7 @@
 
 Self-hosted, parent-controlled learning practice for families, built as a Hermes Agent extension pack.
 
-> Status: `0.1.1-alpha` maintenance alpha. The current alpha scope is Telegram-first: the core CLI, dry-run delivery, setup, doctor, backup/restore, Telegram contracts, examples, daily parent status automation, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
+> Status: `0.1.2-alpha` installability alpha. The current alpha scope is Telegram-first: the core CLI, Docker Compose dry-run smoke, setup, doctor, backup/restore, Telegram contracts, examples, parent status automation, learning plans, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
 
 ## What this is
 
@@ -49,8 +49,8 @@ Web/PWA, API, and iOS are later surfaces over the same core operations. They sho
 
 ## Current roadmap
 
-- `0.1`: Telegram-first self-hosted MVP, local CLI lifecycle, setup, doctor, backup/restore, demo fixtures, controlled E2E smoke
-- `0.2`: learning-plan management and VPS/cloud-LLM hardening for the Telegram MVP
+- `0.1`: Telegram-first self-hosted MVP, local CLI lifecycle, setup, doctor, backup/restore, demo fixtures, controlled E2E smoke, Docker Compose dry-run smoke
+- `0.2`: VPS/cloud-LLM hardening, install UX polish, and storage migration prep for broader pilots
 - `0.3`: Parent dashboard / PWA as a second surface over the tested core
 - `0.4`: multiple children and parent devices
 - `0.5`: iOS companion app
@@ -75,6 +75,8 @@ Only bounded LearnBuddy tools should be exposed to the child profile at first. A
 ## Repository layout
 
 ```text
+Dockerfile                          Container image for Compose quickstart
+docker-compose.yml                  one-command dry-run and smoke path
 plugins/learnbuddy-learning/        Hermes plugin wrapper
 src/learnbuddy_core/                shared core logic
 scripts/                            helper scripts for profile and child gateway setup
@@ -179,6 +181,7 @@ For direct child chat, create the separate profile with `scripts/setup-child-pro
 ## Docs
 
 - [`docs/quickstart-telegram.md`](docs/quickstart-telegram.md)
+- [`docs/quickstart-docker.md`](docs/quickstart-docker.md)
 - [`docs/telegram-command-contracts.md`](docs/telegram-command-contracts.md)
 - [`docs/telegram-e2e-smoke.md`](docs/telegram-e2e-smoke.md)
 - [`docs/setup-child-profile.md`](docs/setup-child-profile.md)

@@ -41,13 +41,36 @@ git clone https://github.com/Cesarus85/learnbuddy-hermes.git
 cd learnbuddy-hermes
 ```
 
-For the latest tagged alpha maintenance release:
+For the latest tagged alpha release:
 
 ```bash
-git checkout v0.1.1-alpha
+git checkout v0.1.2-alpha
 ```
 
-## 3. Create an isolated Python environment
+## 3. Optional fast path: Docker Compose quickstart
+
+If Docker Compose is available, you can run the safe dry-run doctor without creating a Python venv first:
+
+```bash
+docker compose up --build learnbuddy
+```
+
+Then run the controlled smoke path:
+
+```bash
+docker compose --profile smoke up --build --abort-on-container-exit learnbuddy-smoke
+```
+
+Expected markers:
+
+```text
+delivery.mode=dry_run
+compose_smoke=ok
+```
+
+This creates local runtime folders under `learnbuddy-docker/config`, `learnbuddy-docker/data`, and `learnbuddy-docker/backups`. They are git-ignored and may become private once you use real family data. See [`docs/quickstart-docker.md`](docs/quickstart-docker.md) for Compose CLI examples and the Telegram opt-in boundary.
+
+## 4. Create an isolated Python environment
 
 ```bash
 python3 -m venv .venv
@@ -63,7 +86,7 @@ learnbuddy --help
 pytest -q
 ```
 
-## 4. Create public-safe local config
+## 5. Create public-safe local config
 
 ```bash
 learnbuddy setup \
@@ -84,7 +107,7 @@ delivery.mode: dry_run
 
 The generated `safety.queue_max` limits follow-up tasks while one exercise is open. This mirrors the production-safety rule that parent/chat automation must not pile up unlimited queued tasks.
 
-## 5. Run the full dry-run smoke test
+## 6. Run the full dry-run smoke test
 
 This step covers `learnbuddy schedule-exercise`, `learnbuddy plan`, `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path.
 
@@ -114,7 +137,7 @@ Expected first-run behavior:
 
 A fuller walkthrough lives in [`docs/demo-flow.md`](docs/demo-flow.md). For existing private deployments, use [`docs/production-migration-checklist.md`](docs/production-migration-checklist.md) before touching production.
 
-## 6. Optional: use the synthetic exercise fixture
+## 7. Optional: use the synthetic exercise fixture
 
 Public demo exercises live here:
 
@@ -124,7 +147,7 @@ examples/exercises/de/grade-5-mixed.jsonl
 
 They are intentionally synthetic and cover math, German, and English. They are examples, not a curriculum.
 
-## 7. Optional: install the Hermes plugin wrapper locally
+## 8. Optional: install the Hermes plugin wrapper locally
 
 The CLI works directly from the Python package. To expose the LearnBuddy plugin wrapper to a Hermes profile, install the plugin directory into that profile's plugin folder.
 
@@ -245,7 +268,7 @@ scripts/install-weekly-status-timer.sh \
 
 This writes a systemd user timer that runs `learnbuddy weekly-status --notify`. It summarizes the current local week, includes next-week recommendations, skips empty weeks by default, sends at most once per week, and uses the same parent automation pause guard as daily status.
 
-## 8. Optional: Telegram delivery
+## 9. Optional: Telegram delivery
 
 Keep Telegram off until the dry-run flow works.
 
@@ -287,7 +310,7 @@ learnbuddy report --config ./learnbuddy.yaml --notify
 
 `doctor` reports missing variable names, not secret values, and flags unwritable runtime files such as a root-owned `scheduled_exercises.jsonl` before timers fail mid-dispatch. `queue_max` caps follow-up tasks behind an active pending exercise, returning `queue_full` instead of silently piling up unlimited work. `schedule-exercise` records a concrete timed task; it does not send by itself. `dispatch-plan` is safe to run from cron/systemd: it opens and delivers at most one due scheduled or automatic exercise when allowed-hours policy permits it and no exercise is already pending. `daily_auto_limit` applies to automatic plan selection, not to explicit parent-scheduled due rows. Use `scripts/install-dispatch-timer.sh` for the recurring dispatcher path. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background. If a pending exercise has no successful child-delivery metadata, the watcher repairs that by sending the current prompt before waiting for another answer; `learnbuddy deliver-pending` gives the same repair path as an explicit operator command.
 
-## 9. VPS notes
+## 10. VPS notes
 
 For VPS installs, use a dedicated non-root user and a dedicated directory such as:
 

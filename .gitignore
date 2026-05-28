@@ -23,6 +23,7 @@ learnbuddy.db
 *.sqlite
 *.sqlite3
 learnbuddy.yaml
+learnbuddy-docker/
 data/
 restored-learnbuddy-data/
 learnbuddy-backup*.zip

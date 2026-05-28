@@ -40,12 +40,29 @@ def test_demo_artifacts_are_ignored_by_default() -> None:
         assert pattern in gitignore
 
 
+def test_public_release_versions_are_consistent() -> None:
+    pyproject = read_repo_file("pyproject.toml")
+    package_init = read_repo_file("src/learnbuddy_core/__init__.py")
+    plugin_yaml = read_repo_file("plugins/learnbuddy-learning/plugin.yaml")
+    plugin_init = read_repo_file("plugins/learnbuddy-learning/__init__.py")
+    readme = read_repo_file("README.md")
+    install = read_repo_file("INSTALL.md")
+
+    assert 'version = "0.1.2a0"' in pyproject
+    assert '__version__ = "0.1.2a0"' in package_init
+    assert "version: 0.1.2-alpha" in plugin_yaml
+    assert 'PLUGIN_VERSION = "0.1.2-alpha"' in plugin_init
+    assert "0.1.2-alpha" in readme
+    assert "git checkout v0.1.2-alpha" in install
+
+
 def test_public_alpha_docs_are_not_stub_placeholders() -> None:
     required_docs = [
         "README.md",
         "SECURITY.md",
         "PRIVACY.md",
         "docs/quickstart-telegram.md",
+        "docs/quickstart-docker.md",
         "docs/setup-child-profile.md",
         "docs/quickstart-vps.md",
         "docs/demo-flow.md",
@@ -304,6 +321,120 @@ def test_child_profile_docs_support_age_staged_full_agent_gateway() -> None:
     ]
     for snippet in required_service_script_snippets:
         assert snippet in service_script
+
+
+def test_docker_compose_assets_support_one_command_dry_run_smoke(tmp_path) -> None:
+    compose = read_repo_file("docker-compose.yml")
+    dockerfile = read_repo_file("Dockerfile")
+    dockerignore = read_repo_file(".dockerignore")
+    entrypoint = read_repo_file("scripts/docker-entrypoint.sh")
+    docs = read_repo_file("docs/quickstart-docker.md")
+    readme = read_repo_file("README.md")
+    install = read_repo_file("INSTALL.md")
+    gitignore = read_repo_file(".gitignore")
+
+    for text in (compose, dockerfile, dockerignore, entrypoint, docs):
+        assert_public_safe_text(text)
+
+    required_compose_snippets = [
+        "learnbuddy:",
+        "learnbuddy-smoke:",
+        "profiles:",
+        "smoke",
+        "LEARNBUDDY_CONFIG_PATH=/app/config/learnbuddy.yaml",
+        "LEARNBUDDY_DATA_DIR=/app/data",
+        "./learnbuddy-docker/config:/app/config",
+        "./learnbuddy-docker/data:/app/data",
+        "./learnbuddy-docker/backups:/app/backups",
+        "delivery.mode=dry_run",
+        "compose_smoke=ok",
+    ]
+    for snippet in required_compose_snippets:
+        assert snippet in compose
+
+    required_dockerfile_snippets = [
+        "FROM python:3.12-slim",
+        "pip install --no-cache-dir -e .",
+        "scripts/docker-entrypoint.sh",
+        "ENTRYPOINT",
+        "CMD",
+    ]
+    for snippet in required_dockerfile_snippets:
+        assert snippet in dockerfile
+
+    for pattern in (
+        ".git",
+        ".venv",
+        ".family/",
+        "learnbuddy.db",
+        "*.sqlite",
+        "*.sqlite3",
+        "*.local.yaml",
+        "*.local.json",
+        "learnbuddy-docker/",
+        "data/",
+        "*.zip",
+    ):
+        assert pattern in dockerignore
+    assert "learnbuddy-docker/" in gitignore
+
+    required_doc_snippets = [
+        "Docker Compose quickstart",
+        "docker compose up --build learnbuddy",
+        "docker compose --profile smoke up --build --abort-on-container-exit learnbuddy-smoke",
+        "delivery.mode: dry_run",
+        "compose_smoke=ok",
+        "No Telegram message is sent",
+        "learnbuddy-docker/config",
+        "learnbuddy-docker/data",
+        "learnbuddy-docker/backups",
+    ]
+    for snippet in required_doc_snippets:
+        assert snippet in docs
+    assert "docs/quickstart-docker.md" in readme
+    assert "Docker Compose quickstart" in install
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log = tmp_path / "learnbuddy.log"
+    fake_learnbuddy = fake_bin / "learnbuddy"
+    fake_learnbuddy.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, pathlib, sys\n"
+        f"log = pathlib.Path({str(log)!r})\n"
+        "log.write_text(log.read_text() + ' '.join(sys.argv[1:]) + '\\n' if log.exists() else ' '.join(sys.argv[1:]) + '\\n')\n"
+        "if len(sys.argv) > 1 and sys.argv[1] == 'setup':\n"
+        "    cfg = pathlib.Path(sys.argv[sys.argv.index('--config') + 1])\n"
+        "    data = pathlib.Path(sys.argv[sys.argv.index('--data-dir') + 1])\n"
+        "    cfg.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    data.mkdir(parents=True, exist_ok=True)\n"
+        "    cfg.write_text('delivery:\\n  mode: dry_run\\n', encoding='utf-8')\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    fake_learnbuddy.chmod(0o755)
+    config_path = tmp_path / "config/learnbuddy.yaml"
+    data_dir = tmp_path / "data"
+    env = dict(os.environ)
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+    env["LEARNBUDDY_CONFIG_PATH"] = str(config_path)
+    env["LEARNBUDDY_DATA_DIR"] = str(data_dir)
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/docker-entrypoint.sh"), "doctor", "--config", str(config_path)],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    calls = log.read_text(encoding="utf-8")
+    assert result.returncode == 0
+    assert "setup --config" in calls
+    assert "--data-dir" in calls
+    assert "doctor --config" in calls
+    assert config_path.exists()
 
 
 def test_public_alpha_scope_is_telegram_first_and_defers_web_api_app() -> None:

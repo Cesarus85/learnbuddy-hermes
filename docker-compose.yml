@@ -1,0 +1,54 @@
+name: learnbuddy-hermes
+
+x-learnbuddy-environment: &learnbuddy-environment
+  - LEARNBUDDY_CONFIG_PATH=/app/config/learnbuddy.yaml
+  - LEARNBUDDY_DATA_DIR=/app/data
+  - LEARNBUDDY_CHILD_ID=${LEARNBUDDY_CHILD_ID:-learner}
+  - LEARNBUDDY_CHILD_NAME=${LEARNBUDDY_CHILD_NAME:-Learner}
+  - LEARNBUDDY_AGENT_NAME=${LEARNBUDDY_AGENT_NAME:-LearnBuddy}
+
+x-learnbuddy-volumes: &learnbuddy-volumes
+  - ./learnbuddy-docker/config:/app/config
+  - ./learnbuddy-docker/data:/app/data
+  - ./learnbuddy-docker/backups:/app/backups
+
+services:
+  learnbuddy:
+    build:
+      context: .
+    image: learnbuddy-hermes:local
+    environment: *learnbuddy-environment
+    volumes: *learnbuddy-volumes
+    command: ["doctor", "--config", "/app/config/learnbuddy.yaml"]
+
+  learnbuddy-smoke:
+    profiles: ["smoke"]
+    build:
+      context: .
+    image: learnbuddy-hermes:local
+    environment: *learnbuddy-environment
+    volumes: *learnbuddy-volumes
+    command:
+      - sh
+      - -lc
+      - |
+        set -eu
+        SMOKE_CONFIG=/tmp/learnbuddy-smoke.yaml
+        SMOKE_DATA=/tmp/learnbuddy-smoke-data
+        SMOKE_BACKUP=/app/backups/learnbuddy-compose-smoke.zip
+        rm -rf "$SMOKE_CONFIG" "$SMOKE_DATA" /tmp/restored-learnbuddy-compose-smoke
+        learnbuddy setup --config "$SMOKE_CONFIG" --data-dir "$SMOKE_DATA" --child-id learner --child-name Learner --agent-name LearnBuddy --force
+        learnbuddy doctor --config "$SMOKE_CONFIG"
+        python - <<'PY'
+        from pathlib import Path
+        text = Path('/tmp/learnbuddy-smoke.yaml').read_text(encoding='utf-8')
+        assert 'mode: dry_run' in text
+        print('delivery.mode=dry_run')
+        PY
+        learnbuddy queue --config "$SMOKE_CONFIG" --subject math --prompt "2 + 2?" --answer "4"
+        learnbuddy next --config "$SMOKE_CONFIG" --deliver
+        learnbuddy answer --config "$SMOKE_CONFIG" "4"
+        learnbuddy report --config "$SMOKE_CONFIG" --notify
+        learnbuddy backup --config "$SMOKE_CONFIG" --output "$SMOKE_BACKUP"
+        learnbuddy restore --archive "$SMOKE_BACKUP" --data-dir /tmp/restored-learnbuddy-compose-smoke --force
+        echo compose_smoke=ok
