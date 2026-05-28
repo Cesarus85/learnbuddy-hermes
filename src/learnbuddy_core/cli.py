@@ -204,6 +204,34 @@ def cmd_schedule_exercise(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_material(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    if args.material_command == "add-text":
+        material = runtime.add_material_set({
+            "title": args.title,
+            "subject": args.subject,
+            "source_type": "text",
+            "text_excerpt": args.text,
+            "task_candidates": args.candidate or [],
+            "notes": args.notes or "",
+        })
+        _print_json({"status": "pending_review", "material": material})
+        return 0
+    if args.material_command == "status":
+        _print_json(runtime.material_status(limit=args.limit))
+        return 0
+    if args.material_command == "approve":
+        result = runtime.approve_material_tasks(
+            args.material_id,
+            expected_answers=args.expected_answer or [],
+            requested_by="parent",
+        )
+        _print_json(result)
+        return 0 if result.get("status") == "approved" else 1
+    raise ValueError(f"unsupported material command: {args.material_command}")
+
+
 def cmd_next(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
     runtime = _runtime_from_args(args, config)
@@ -526,6 +554,26 @@ def build_parser() -> argparse.ArgumentParser:
     schedule.add_argument("--answer", required=True)
     schedule.add_argument("--due-at", required=True, help="ISO timestamp when dispatch-plan may deliver the exercise")
     schedule.set_defaults(func=cmd_schedule_exercise)
+
+    material = sub.add_parser("material", help="add, review, and approve parent-supplied learning material")
+    material_sub = material.add_subparsers(dest="material_command", required=True)
+    material_add = material_sub.add_parser("add-text", help="store parent-supplied text material for review")
+    _add_runtime_options(material_add)
+    material_add.add_argument("--title", required=True)
+    material_add.add_argument("--subject", choices=["math", "german", "english", "general"], default="general")
+    material_add.add_argument("--text", required=True, help="public-safe extracted/pasted material text")
+    material_add.add_argument("--candidate", action="append", help="reviewable task candidate; repeat for multiple tasks")
+    material_add.add_argument("--notes", help="short parent/admin note")
+    material_add.set_defaults(func=cmd_material)
+    material_status = material_sub.add_parser("status", help="show material review queue")
+    _add_runtime_options(material_status)
+    material_status.add_argument("--limit", type=int, default=10)
+    material_status.set_defaults(func=cmd_material)
+    material_approve = material_sub.add_parser("approve", help="convert reviewed material candidates into bounded exercises")
+    _add_runtime_options(material_approve)
+    material_approve.add_argument("--material-id", required=True)
+    material_approve.add_argument("--expected-answer", action="append", help="expected answer matching each task candidate; repeat in order")
+    material_approve.set_defaults(func=cmd_material)
 
     next_exercise = sub.add_parser("next", help="open or queue the next exercise")
     _add_runtime_options(next_exercise)

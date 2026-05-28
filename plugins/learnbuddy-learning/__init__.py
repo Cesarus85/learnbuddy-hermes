@@ -85,6 +85,14 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
         "policy": "Parent/admin only. Plans select from existing exercises by configured subject/focus and never generate unbounded child tasks by themselves.",
     },
     {
+        "operation": "material_review",
+        "tool": "learnbuddy_add_learning_material / learnbuddy_material_status / learnbuddy_approve_material_tasks",
+        "examples": ["Ich habe ein Arbeitsblatt", "Zeig die Material-Warteschlange", "Gib die ersten zwei Aufgaben mit Antworten 15 und 20 frei"],
+        "requires": ["material_id", "expected_answers"],
+        "policy_bounded": True,
+        "policy": "Parent/admin only. Material intake stores review state first; approval creates exercises only after ordered expected answers are supplied. Import/status never sends to the child.",
+    },
+    {
         "operation": "create_and_send_exercise",
         "tool": "learnbuddy_create_and_send_exercise",
         "examples": [
@@ -208,6 +216,36 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "reason": {"type": "string", "description": "Optional short parent-facing reason."},
         },
         "required": ["action"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_add_learning_material": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "title": {"type": "string", "description": "Parent-facing title for the reviewed material."},
+            "subject": {"type": "string", "enum": ["math", "german", "english", "general"], "default": "general"},
+            "source_type": {"type": "string", "enum": ["text", "image", "pdf", "unknown"], "default": "text"},
+            "text_excerpt": {"type": "string", "description": "Public-safe extracted/pasted material text. Do not include secrets or private chat logs."},
+            "task_candidates": {"type": "array", "items": {"type": "string"}, "description": "Reviewable candidate prompts extracted from the material."},
+            "notes": {"type": "string", "description": "Short parent/admin note."},
+        },
+        "required": ["title", "text_excerpt"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_material_status": {
+        "type": "object",
+        "properties": {**COMMON_PROPERTIES, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}},
+        "additionalProperties": False,
+    },
+    "learnbuddy_approve_material_tasks": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "material_id": {"type": "string", "description": "Material set id returned by learnbuddy_add_learning_material."},
+            "expected_answers": {"type": "array", "items": {"type": "string"}, "description": "Ordered answers, one per approved task candidate."},
+            "selected_indices": {"type": "array", "items": {"type": "integer"}, "description": "Optional zero-based candidate indices to approve."},
+        },
+        "required": ["material_id", "expected_answers"],
         "additionalProperties": False,
     },
     "learnbuddy_submit_answer": {
@@ -598,6 +636,40 @@ def learnbuddy_parent_command_contracts(args: dict[str, Any] | None = None) -> s
     })
 
 
+def learnbuddy_add_learning_material(args: dict[str, Any] | None = None) -> str:
+    """Store parent-supplied learning material for review without child delivery."""
+    args = dict(args or {})
+    runtime = _runtime(args)
+    material = runtime.add_material_set({
+        "title": args.get("title"),
+        "subject": args.get("subject", "general"),
+        "source_type": args.get("source_type", "text"),
+        "text_excerpt": args.get("text_excerpt") or args.get("text") or "",
+        "task_candidates": args.get("task_candidates") or [],
+        "notes": args.get("notes") or "",
+    })
+    return _json({"status": material["status"], "material": material})
+
+
+def learnbuddy_material_status(args: dict[str, Any] | None = None) -> str:
+    """Return the parent/admin material review queue."""
+    args = dict(args or {})
+    runtime = _runtime(args)
+    return _json(runtime.material_status(limit=int(args.get("limit") or 10)))
+
+
+def learnbuddy_approve_material_tasks(args: dict[str, Any] | None = None) -> str:
+    """Convert reviewed material candidates into bounded exercises after parent-provided answers."""
+    args = dict(args or {})
+    runtime = _runtime(args)
+    return _json(runtime.approve_material_tasks(
+        str(args.get("material_id") or ""),
+        expected_answers=args.get("expected_answers") or [],
+        selected_indices=args.get("selected_indices"),
+        requested_by="parent",
+    ))
+
+
 def learnbuddy_create_learning_plan(args: dict[str, Any] | None = None) -> str:
     """Create and activate a bounded parent-approved learning plan."""
     args = dict(args or {})
@@ -828,6 +900,9 @@ TOOLS = [
     ("learnbuddy_create_learning_plan", learnbuddy_create_learning_plan, "learnbuddy_learning", "Parent/admin: create and activate a bounded learning plan over existing exercises. Does not generate child tasks by itself."),
     ("learnbuddy_learning_plan_status", learnbuddy_learning_plan_status, "learnbuddy_learning", "Parent/admin: show the active learning plan and plan history."),
     ("learnbuddy_control_learning_plan", learnbuddy_control_learning_plan, "learnbuddy_learning", "Parent/admin: pause, resume, complete, or cancel the active learning plan."),
+    ("learnbuddy_add_learning_material", learnbuddy_add_learning_material, "learnbuddy_learning", "Parent/admin: store parent-supplied worksheet/material text for review; no child delivery or exercise creation."),
+    ("learnbuddy_material_status", learnbuddy_material_status, "learnbuddy_learning", "Parent/admin: show pending reviewed learning materials and approval state."),
+    ("learnbuddy_approve_material_tasks", learnbuddy_approve_material_tasks, "learnbuddy_learning", "Parent/admin: convert reviewed material candidates into exercises only after ordered expected answers are provided."),
     ("learnbuddy_parent_command_contracts", learnbuddy_parent_command_contracts, "learnbuddy_learning", "Parent command contract reference for Telegram routing: status, report, resend pending, dispatch plan, and create/send exercise. Read before improvising ambiguous parent commands."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy current pending/queue status only; not answer history."),

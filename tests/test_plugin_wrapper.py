@@ -34,6 +34,41 @@ def test_plugin_tools_use_isolated_data_dir_and_return_json(tmp_path):
     assert (data_dir / "answers.jsonl").exists()
 
 
+def test_plugin_material_review_tools_are_parent_bounded(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "plugin-material-data"
+
+    material = json.loads(plugin.learnbuddy_add_learning_material({
+        "data_dir": str(data_dir),
+        "title": "Reading worksheet",
+        "subject": "english",
+        "text_excerpt": "Translate: Haus\nTranslate: Baum",
+        "task_candidates": ["Translate: Haus", "Translate: Baum"],
+    }))
+    material_id = material["material"]["id"]
+    refused = json.loads(plugin.learnbuddy_approve_material_tasks({
+        "data_dir": str(data_dir),
+        "material_id": material_id,
+        "expected_answers": ["house"],
+    }))
+
+    assert refused["status"] == "missing_answers"
+    assert not (data_dir / "exercises.jsonl").exists()
+
+    approved = json.loads(plugin.learnbuddy_approve_material_tasks({
+        "data_dir": str(data_dir),
+        "material_id": material_id,
+        "expected_answers": ["house", "tree"],
+    }))
+    status = json.loads(plugin.learnbuddy_material_status({"data_dir": str(data_dir)}))
+
+    assert approved["status"] == "approved"
+    assert approved["created"] == 2
+    assert status["pending_review"] == 0
+    assert any(tool[0] == "learnbuddy_add_learning_material" and tool[2] == "learnbuddy_learning" for tool in plugin.TOOLS)
+    assert not any(tool[0] == "learnbuddy_add_learning_material" and tool[2] == "learnbuddy_child" for tool in plugin.TOOLS)
+
+
 def test_plugin_learning_plan_tools_and_dispatch_use_active_plan(tmp_path):
     plugin = load_plugin()
     data_dir = tmp_path / "plugin-plan-data"
@@ -559,6 +594,9 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_create_learning_plan",
         "learnbuddy_learning_plan_status",
         "learnbuddy_control_learning_plan",
+        "learnbuddy_add_learning_material",
+        "learnbuddy_material_status",
+        "learnbuddy_approve_material_tasks",
         "learnbuddy_submit_answer",
         "learnbuddy_learning_status",
         "learnbuddy_parent_answer_status",
@@ -615,6 +653,18 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert plan_control_schema["required"] == ["action"]
     assert plan_control_schema["properties"]["action"]["enum"] == ["pause", "resume", "complete", "cancel"]
 
+    material_add_schema = ctx.tools["learnbuddy_add_learning_material"]["schema"]["parameters"]
+    material_status_schema = ctx.tools["learnbuddy_material_status"]["schema"]["parameters"]
+    material_approve_schema = ctx.tools["learnbuddy_approve_material_tasks"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_add_learning_material"]["toolset"] == "learnbuddy_learning"
+    assert ctx.tools["learnbuddy_material_status"]["toolset"] == "learnbuddy_learning"
+    assert ctx.tools["learnbuddy_approve_material_tasks"]["toolset"] == "learnbuddy_learning"
+    assert material_add_schema["required"] == ["title", "text_excerpt"]
+    assert material_add_schema["additionalProperties"] is False
+    assert material_status_schema["additionalProperties"] is False
+    assert material_approve_schema["required"] == ["material_id", "expected_answers"]
+    assert material_approve_schema["additionalProperties"] is False
+
     answer_schema = ctx.tools["learnbuddy_submit_answer"]["schema"]["parameters"]
     assert answer_schema["required"] == ["answer"]
     assert answer_schema["properties"]["input_mode"]["enum"] == ["text", "audio"]
@@ -665,7 +715,7 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
 
     assert contracts["status"] == "ok"
     operations = {item["operation"]: item for item in contracts["contracts"]}
-    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "weekly_status", "automation_control", "resend_pending", "dispatch_plan", "learning_plan", "create_and_send_exercise", "schedule_exercise"}
+    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "weekly_status", "automation_control", "resend_pending", "dispatch_plan", "learning_plan", "material_review", "create_and_send_exercise", "schedule_exercise"}
     assert operations["current_status"]["tool"] == "learnbuddy_learning_status"
     assert "Was ist offen?" in operations["current_status"]["examples"]
     assert operations["answer_status"]["tool"] == "learnbuddy_parent_answer_status"
@@ -687,6 +737,10 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert operations["learning_plan"]["tool"] == "learnbuddy_create_learning_plan / learnbuddy_learning_plan_status / learnbuddy_control_learning_plan"
     assert operations["learning_plan"]["policy_bounded"] is True
     assert "existing exercises" in operations["learning_plan"]["policy"]
+    assert operations["material_review"]["tool"] == "learnbuddy_add_learning_material / learnbuddy_material_status / learnbuddy_approve_material_tasks"
+    assert operations["material_review"]["requires"] == ["material_id", "expected_answers"]
+    assert operations["material_review"]["policy_bounded"] is True
+    assert "Material intake stores review state first" in operations["material_review"]["policy"]
     assert operations["create_and_send_exercise"]["tool"] == "learnbuddy_create_and_send_exercise"
     assert operations["create_and_send_exercise"]["requires"] == ["prompt", "answer_or_expected_answers"]
     assert "Frage Learner folgende Aufgaben" in operations["create_and_send_exercise"]["examples"]

@@ -93,6 +93,9 @@ def _storage_check(config: LearnBuddyConfig) -> dict[str, Any]:
         "answers.jsonl",
         "help_requests.jsonl",
         "scheduled_exercises.jsonl",
+        "plans.jsonl",
+        "plan-state.json",
+        "material-sets.jsonl",
     ]
     unwritable_files = [name for name in runtime_files if (storage / name).exists() and not os.access(storage / name, os.W_OK)]
     writable = base_writable and not unwritable_files

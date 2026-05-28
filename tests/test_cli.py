@@ -10,6 +10,63 @@ def test_doctor_runs(capsys):
     assert "overall=ok" in out
 
 
+def test_cli_material_review_flow_requires_parent_answers(capsys, tmp_path):
+    data_dir = tmp_path / "data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main([
+        "material",
+        "add-text",
+        "--config",
+        str(config_path),
+        "--title",
+        "Worksheet 1",
+        "--subject",
+        "math",
+        "--text",
+        "2 + 3?\n4 + 5?",
+        "--candidate",
+        "2 + 3?",
+        "--candidate",
+        "4 + 5?",
+    ]) == 0
+    material = json.loads(capsys.readouterr().out)
+    material_id = material["material"]["id"]
+
+    assert main(["material", "approve", "--config", str(config_path), "--material-id", material_id]) == 1
+    refused = json.loads(capsys.readouterr().out)
+    assert refused["status"] == "missing_answers"
+
+    assert main([
+        "material",
+        "approve",
+        "--config",
+        str(config_path),
+        "--material-id",
+        material_id,
+        "--expected-answer",
+        "5",
+        "--expected-answer",
+        "9",
+    ]) == 0
+    approved = json.loads(capsys.readouterr().out)
+    assert approved["created"] == 2
+
+    assert main(["material", "status", "--config", str(config_path)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["pending_review"] == 0
+    assert len(status["material_sets"]) == 1
+
+
 def test_doctor_displays_configured_child_and_agent(capsys, tmp_path):
     config_path = tmp_path / "learnbuddy.yaml"
     config_path.write_text(
@@ -917,6 +974,15 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
         "--daily-goal", "1",
     ]) == 0
     capsys.readouterr()
+    assert main([
+        "material", "add-text",
+        "--data-dir", str(data_dir),
+        "--title", "Material 1",
+        "--subject", "math",
+        "--text", "10 + 5?",
+        "--candidate", "10 + 5?",
+    ]) == 0
+    capsys.readouterr()
 
     assert main(["backup", "--data-dir", str(data_dir), "--output", str(archive_path)]) == 0
     backup = json.loads(capsys.readouterr().out)
@@ -932,6 +998,7 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
         "scheduled_exercises.jsonl",
         "plans.jsonl",
         "plan-state.json",
+        "material-sets.jsonl",
     }
 
     assert main(["restore", "--archive", str(archive_path), "--data-dir", str(restore_dir)]) == 0
@@ -943,6 +1010,7 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
     assert (restore_dir / "scheduled_exercises.jsonl").read_text(encoding="utf-8") == (data_dir / "scheduled_exercises.jsonl").read_text(encoding="utf-8")
     assert (restore_dir / "plans.jsonl").read_text(encoding="utf-8") == (data_dir / "plans.jsonl").read_text(encoding="utf-8")
     assert (restore_dir / "plan-state.json").read_text(encoding="utf-8") == (data_dir / "plan-state.json").read_text(encoding="utf-8")
+    assert (restore_dir / "material-sets.jsonl").read_text(encoding="utf-8") == (data_dir / "material-sets.jsonl").read_text(encoding="utf-8")
 
 
 def test_cli_learning_plan_create_status_control_and_dispatch(capsys, tmp_path):

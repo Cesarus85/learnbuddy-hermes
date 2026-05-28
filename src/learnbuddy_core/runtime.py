@@ -46,6 +46,10 @@ class RuntimePaths:
         return self.data_dir / "plans.jsonl"
 
     @property
+    def material_sets(self) -> Path:
+        return self.data_dir / "material-sets.jsonl"
+
+    @property
     def plan_state(self) -> Path:
         return self.data_dir / "plan-state.json"
 
@@ -237,6 +241,87 @@ class LearnBuddyRuntime:
 
     def learning_plans(self) -> list[dict[str, Any]]:
         return _read_jsonl(self.paths.plans)
+
+    def material_sets(self) -> list[dict[str, Any]]:
+        return _read_jsonl(self.paths.material_sets)
+
+    def add_material_set(self, material: dict[str, Any]) -> dict[str, Any]:
+        """Store parent-reviewed learning material without creating child-visible tasks."""
+        title = str(material.get("title") or "").strip()
+        if not title:
+            raise ValueError("material set requires title")
+        candidates = [str(item).strip() for item in material.get("task_candidates") or [] if str(item).strip()]
+        row = {
+            "id": str(material.get("id") or f"mat-{uuid.uuid4().hex[:12]}"),
+            "title": title,
+            "subject": str(material.get("subject") or "general"),
+            "source_type": str(material.get("source_type") or "text"),
+            "text_excerpt": str(material.get("text_excerpt") or material.get("text") or "")[:4000],
+            "task_candidates": candidates,
+            "notes": str(material.get("notes") or "")[:1000],
+            "metadata": material.get("metadata") if isinstance(material.get("metadata"), dict) else {},
+            "status": "pending_review",
+            "created_at": _now(),
+            "updated_at": _now(),
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
+        }
+        _append_jsonl(self.paths.material_sets, row)
+        return row
+
+    def material_status(self, *, limit: int = 10) -> dict[str, Any]:
+        rows = self.material_sets()
+        pending = [row for row in rows if row.get("status") == "pending_review"]
+        return {
+            "status": "ok",
+            "material_sets": rows[-max(1, min(50, int(limit))):],
+            "total": len(rows),
+            "pending_review": len(pending),
+        }
+
+    def approve_material_tasks(
+        self,
+        material_id: str,
+        *,
+        expected_answers: list[str],
+        selected_indices: list[int] | None = None,
+        requested_by: str = "parent",
+    ) -> dict[str, Any]:
+        rows = self.material_sets()
+        for index, row in enumerate(rows):
+            if str(row.get("id") or "") != str(material_id):
+                continue
+            candidates = [str(item).strip() for item in row.get("task_candidates") or [] if str(item).strip()]
+            if selected_indices is not None:
+                selected = []
+                for item in selected_indices:
+                    try:
+                        selected.append(candidates[int(item)])
+                    except (IndexError, ValueError):
+                        return {"status": "invalid_selection", "material": row, "created": 0}
+                candidates = selected
+            answers = [str(item).strip() for item in expected_answers if str(item).strip()]
+            if not candidates:
+                return {"status": "no_task_candidates", "material": row, "created": 0}
+            if len(answers) != len(candidates):
+                return {"status": "missing_answers", "material": row, "created": 0, "required_answers": len(candidates), "provided_answers": len(answers)}
+            created = []
+            for prompt, answer in zip(candidates, answers):
+                created.append(self.add_exercise({
+                    "subject": row.get("subject") or "general",
+                    "type": "material_review_task",
+                    "prompt": prompt,
+                    "answer": answer,
+                    "topic": row.get("title"),
+                    "metadata": {"source": "material_set", "material_set_id": row.get("id"), "requested_by": requested_by},
+                }))
+            updated = dict(row)
+            updated.update({"status": "approved", "approved_at": _now(), "updated_at": _now(), "created_exercise_ids": [item["id"] for item in created]})
+            rows[index] = updated
+            _write_jsonl(self.paths.material_sets, rows)
+            return {"status": "approved", "material": updated, "created": len(created), "exercises": created}
+        return {"status": "unknown_material", "material_id": material_id, "created": 0}
 
     def create_learning_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
         """Create a bounded parent-approved learning plan and make it active."""

@@ -70,6 +70,15 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 - Tools: `learnbuddy_create_learning_plan`, `learnbuddy_learning_plan_status`, `learnbuddy_control_learning_plan`
 - Rule: parent/admin only. Plans are bounded state over existing exercises; they do not generate free-form child tasks. Create/control mutate plan state only, status is read-only, and delivery still happens through `learnbuddy_dispatch_plan`.
 
+### Parent-supplied material review
+
+- Parent examples: `Ich habe ein Arbeitsblatt`, `Importiere dieses Material`, `Mach daraus Aufgaben nach meiner Freigabe`, `Zeig die Material-Warteschlange`, `Gib die ersten zwei Aufgaben mit Antworten 15 und 20 frei`
+- Tools: `learnbuddy_add_learning_material`, `learnbuddy_material_status`, `learnbuddy_approve_material_tasks`
+- Runtime file: `material-sets.jsonl`
+- Required approval args: `material_id` plus ordered `expected_answers`; optional `selected_indices` chooses which candidates to approve.
+- Rule: parent/admin only. `learnbuddy_add_learning_material` stores pasted or extracted worksheet text plus reviewable task candidates; it does not create a pending child exercise and does not send anything to the child. `learnbuddy_material_status` is read-only. `learnbuddy_approve_material_tasks` converts selected candidates into normal exercises only after the parent supplies one expected answer per approved candidate. Missing or mismatched answers must be treated as a refusal, not as permission to improvise.
+- Delivery rule: approved material tasks become ordinary bounded exercises. They still require the normal parent send, schedule, or `learnbuddy_dispatch_plan` path before the child sees them.
+
 ### Schedule one concrete exercise for later
 
 - Parent examples: `Schick Learner um 10:30: Was ist 10 + 20?`, `Plane für morgen 16:00 eine Matheaufgabe mit Antwort 30`

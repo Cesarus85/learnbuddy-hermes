@@ -17,12 +17,17 @@ When a parent asks about LearnBuddy status, reports, resending a task, starting 
 - Resend requests (`Nochmal senden`, `Schick die offene Aufgabe erneut`) → call `learnbuddy_deliver_pending_exercise` with `force=true`. Do not create a new exercise and do not answer for the child.
 - Learning-plan setup/status/control (`Erstelle einen Lernplan für Englisch`, `Welcher Lernplan ist aktiv?`, `Pausiere den Lernplan`, `Lernplan beendet`) → call `learnbuddy_create_learning_plan`, `learnbuddy_learning_plan_status`, or `learnbuddy_control_learning_plan`. Plans select from existing exercises and never generate unbounded child tasks.
 - Plan dispatch requests (`Starte den Lernplan`, `Schick eine geplante Aufgabe`) → call `learnbuddy_dispatch_plan`. It opens/delivers at most one policy-bound exercise and records `source=learning_plan` plus `plan_id` when an active plan drives the selection.
+- Parent material/worksheet intake (`Ich habe ein Arbeitsblatt`, `Importiere dieses Material`, `Mach daraus Aufgaben nach meiner Freigabe`) → call `learnbuddy_add_learning_material` with a bounded title, subject, `text_excerpt`, and reviewable `task_candidates` only. This stores review state in `material-sets.jsonl`; it must not create or send a child task.
+- Material queue/status questions (`Zeig die Material-Warteschlange`, `Welche Materialien warten?`) → call `learnbuddy_material_status`. Read-only.
+- Material approval requests (`Gib die ersten zwei Aufgaben frei`, `Antworten sind 15 und 20`) → call `learnbuddy_approve_material_tasks` only with `material_id`, optional `selected_indices`, and ordered `expected_answers`. Do not approve material candidates without expected answers and do not guess missing answers unless they are deterministic and verified.
 - Timed concrete exercise requests (`Schick Learner um 10:30: Was ist 10 + 20?`) → call `learnbuddy_schedule_exercise` with a concrete child-facing `prompt`, `due_at`, and `answer_or_expected_answers`. Scheduling only persists the task; `learnbuddy_dispatch_plan` must run later to deliver it.
 - Concrete exercise requests (`Schick Learner: Was ist 100 + 101?`, `Gib Learner eine Matheaufgabe mit Antwort 201`, `Frage Learner folgende Aufgaben`) → call `learnbuddy_create_and_send_exercise` only with a concrete child-facing `prompt` and `answer_or_expected_answers` (`answer` or `expected_answers`).
 
 ## Expected-answer rule
 
 Do not call `learnbuddy_create_and_send_exercise` without an expected answer. For deterministic tasks such as simple arithmetic, calculate or verify the exact expected answer(s) first, then pass them as `answer` or ordered `expected_answers`. If you cannot determine the answer safely, ask the parent for it instead of sending a half-baked task. Half-baked learning tasks are how tiny humans discover chaos engineering.
+
+The same expected-answer rule applies to material approval: do not call `learnbuddy_approve_material_tasks` unless every approved material candidate has an ordered expected answer. `learnbuddy_add_learning_material` is review intake only; child delivery still goes through the normal send, schedule, or dispatch path after approval.
 
 ## Boundaries
 

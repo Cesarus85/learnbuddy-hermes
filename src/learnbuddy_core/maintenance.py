@@ -20,6 +20,7 @@ _RUNTIME_FILE_NAMES = (
     "scheduled_exercises.jsonl",
     "plans.jsonl",
     "plan-state.json",
+    "material-sets.jsonl",
 )
 _MANIFEST_NAME = "learnbuddy-backup-manifest.json"
 _RUNTIME_FILE_PATHS = {
@@ -31,6 +32,7 @@ _RUNTIME_FILE_PATHS = {
     "scheduled_exercises.jsonl": "scheduled_exercises",
     "plans.jsonl": "plans",
     "plan-state.json": "plan_state",
+    "material-sets.jsonl": "material_sets",
 }
 
 

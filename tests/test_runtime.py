@@ -84,6 +84,34 @@ children:
     assert config.max_attempts == 2
 
 
+def test_runtime_material_review_creates_exercises_only_after_parent_answers(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_id="kid-1", child_name="Alex")
+
+    material = runtime.add_material_set({
+        "title": "Bruchrechnung Arbeitsblatt",
+        "subject": "math",
+        "source_type": "text",
+        "text_excerpt": "1/2 + 1/4?\n3/5 von 20?",
+        "task_candidates": ["1/2 + 1/4?", "3/5 von 20?"],
+        "notes": "parent pasted worksheet text",
+    })
+    refused = runtime.approve_material_tasks(material["id"], expected_answers=[])
+
+    assert refused["status"] == "missing_answers"
+    assert runtime.exercises() == []
+
+    approved = runtime.approve_material_tasks(material["id"], expected_answers=["3/4", "12"], requested_by="parent")
+
+    assert approved["status"] == "approved"
+    assert approved["material"]["status"] == "approved"
+    assert approved["created"] == 2
+    exercises = runtime.exercises()
+    assert [row["prompt"] for row in exercises] == ["1/2 + 1/4?", "3/5 von 20?"]
+    assert [row["answer"] for row in exercises] == ["3/4", "12"]
+    assert {row["metadata"]["material_set_id"] for row in exercises} == {material["id"]}
+    assert runtime.material_status()["pending_review"] == 0
+
+
 def test_config_defaults_unset_hermes_home_placeholder_to_user_hermes_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("HERMES_HOME", raising=False)
