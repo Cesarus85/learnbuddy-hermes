@@ -19,7 +19,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.16"
+PLUGIN_VERSION = "0.1.0-alpha.17"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -67,7 +67,7 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
         "tool": "learnbuddy_dispatch_plan",
         "examples": ["Starte den Lernplan", "Schick eine geplante Aufgabe", "Heute eine Mathe-Aufgabe aus dem Plan"],
         "policy_bounded": True,
-        "policy": "Respects allowed_hours, daily_auto_limit, and existing pending sessions.",
+        "policy": "Respects allowed_hours and existing pending sessions. daily_auto_limit gates automatic selection; explicit parent-scheduled due exercises dispatch after the current pending item clears.",
     },
     {
         "operation": "create_and_send_exercise",
@@ -443,14 +443,14 @@ def learnbuddy_dispatch_plan(args: dict[str, Any] | None = None) -> str:
     state = runtime.status()
     if isinstance(state.get("pending"), dict):
         return _json({"status": "pending_exists", "pending": state.get("pending")})
-    auto_count = _auto_sessions_today(runtime, now, config.timezone)
-    if auto_count >= config.daily_auto_limit:
-        return _json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
     scheduled = None
     if not args.get("exercise_id") and not args.get("subject"):
         scheduled = runtime.next_due_scheduled_exercise(now=now.isoformat(), timezone_name=config.timezone)
         if scheduled is None and runtime.pending_scheduled_exercises():
             return _json({"status": "no_due_scheduled_exercise", "now": now.isoformat()})
+    auto_count = _auto_sessions_today(runtime, now, config.timezone)
+    if scheduled is None and auto_count >= config.daily_auto_limit:
+        return _json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
     try:
         result = runtime.open_exercise(
             args.get("exercise_id") or (str(scheduled.get("exercise_id")) if isinstance(scheduled, dict) else None),

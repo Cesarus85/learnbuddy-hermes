@@ -273,6 +273,56 @@ delivery:
     assert dispatched["session"]["source"] == "scheduled_exercise"
 
 
+def test_cli_scheduled_exercise_waits_for_pending_then_bypasses_auto_limit(capsys, tmp_path):
+    data_dir = tmp_path / "cli-scheduled-after-pending-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+safety:
+  daily_auto_limit: 1
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["queue", "--config", str(config_path), "--subject", "english", "--prompt", "Was heißt Löffel auf Englisch?", "--answer", "spoon"]) == 0
+    capsys.readouterr()
+    assert main(["dispatch-plan", "--config", str(config_path), "--subject", "english", "--now", "2026-05-28T10:00:00+02:00"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first["status"] == "opened"
+
+    assert main([
+        "schedule-exercise",
+        "--config", str(config_path),
+        "--subject", "english",
+        "--prompt", "Was heißt Auto auf Englisch?",
+        "--answer", "car",
+        "--due-at", "2026-05-28T10:30:00+02:00",
+    ]) == 0
+    scheduled = json.loads(capsys.readouterr().out)
+    schedule_id = scheduled["scheduled"]["id"]
+
+    assert main(["dispatch-plan", "--config", str(config_path), "--now", "2026-05-28T10:31:00+02:00"]) == 0
+    blocked = json.loads(capsys.readouterr().out)
+    assert blocked["status"] == "pending_exists"
+
+    assert main(["answer", "--config", str(config_path), "spoon"]) == 0
+    capsys.readouterr()
+    assert main(["dispatch-plan", "--config", str(config_path), "--now", "2026-05-28T10:32:00+02:00"]) == 0
+    dispatched = json.loads(capsys.readouterr().out)
+
+    assert dispatched["status"] == "opened"
+    assert dispatched["scheduled"]["id"] == schedule_id
+    assert dispatched["session"]["source"] == "scheduled_exercise"
+    assert dispatched["delivery_status"] == "sent"
+    assert dispatched["delivery"]["status"] == "dry_run"
+
+
 def test_cli_dispatch_plan_respects_allowed_hours(capsys, tmp_path):
     data_dir = tmp_path / "cli-dispatch-hours-data"
     config_path = tmp_path / "learnbuddy.yaml"

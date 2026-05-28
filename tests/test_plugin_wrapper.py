@@ -332,6 +332,63 @@ delivery:
     assert dispatched["session"]["source"] == "scheduled_exercise"
 
 
+def test_plugin_scheduled_exercise_bypasses_auto_limit_after_pending_answer(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "scheduled-plugin-after-pending-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+safety:
+  daily_auto_limit: 1
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    queued = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "english",
+        "prompt": "Was heißt Löffel auf Englisch?",
+        "answer": "spoon",
+    }))
+    first = json.loads(plugin.learnbuddy_dispatch_plan({
+        "config_path": str(config_path),
+        "exercise_id": queued["exercise"]["id"],
+        "now": "2026-05-28T10:00:00+02:00",
+    }))
+    assert first["status"] == "opened"
+
+    scheduled = json.loads(plugin.learnbuddy_schedule_exercise({
+        "config_path": str(config_path),
+        "subject": "english",
+        "prompt": "Was heißt Auto auf Englisch?",
+        "answer": "car",
+        "due_at": "2026-05-28T10:30:00+02:00",
+    }))
+    blocked = json.loads(plugin.learnbuddy_dispatch_plan({
+        "config_path": str(config_path),
+        "now": "2026-05-28T10:31:00+02:00",
+    }))
+    assert blocked["status"] == "pending_exists"
+
+    answer = json.loads(plugin.learnbuddy_child_submit_answer({"config_path": str(config_path), "answer": "spoon"}))
+    assert answer["result"] == "correct"
+    dispatched = json.loads(plugin.learnbuddy_dispatch_plan({
+        "config_path": str(config_path),
+        "now": "2026-05-28T10:32:00+02:00",
+    }))
+
+    assert dispatched["status"] == "opened"
+    assert dispatched["scheduled"]["id"] == scheduled["scheduled"]["id"]
+    assert dispatched["session"]["source"] == "scheduled_exercise"
+    assert dispatched["delivery_status"] == "sent"
+
+
 def test_plugin_loads_default_env_file_before_delivery(tmp_path, monkeypatch):
     plugin = load_plugin()
     data_dir = tmp_path / "env-file-data"

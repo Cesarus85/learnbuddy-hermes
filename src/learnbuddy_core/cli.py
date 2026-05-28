@@ -213,16 +213,16 @@ def cmd_dispatch_plan(args: argparse.Namespace) -> int:
     if isinstance(state.get("pending"), dict):
         _print_json({"status": "pending_exists", "pending": state.get("pending")})
         return 0
-    auto_count = _auto_sessions_today(runtime, now, config.timezone)
-    if auto_count >= config.daily_auto_limit:
-        _print_json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
-        return 0
     scheduled = None
     if not args.exercise_id and not args.subject:
         scheduled = runtime.next_due_scheduled_exercise(now=now.isoformat(), timezone_name=config.timezone)
         if scheduled is None and runtime.pending_scheduled_exercises():
             _print_json({"status": "no_due_scheduled_exercise", "now": now.isoformat()})
             return 0
+    auto_count = _auto_sessions_today(runtime, now, config.timezone)
+    if scheduled is None and auto_count >= config.daily_auto_limit:
+        _print_json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
+        return 0
     try:
         result = runtime.open_exercise(
             args.exercise_id or (str(scheduled.get("exercise_id")) if isinstance(scheduled, dict) else None),

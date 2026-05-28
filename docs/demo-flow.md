@@ -70,7 +70,7 @@ The command returns JSON with an exercise id.
 
 ## 5. Schedule/open, dry-run deliver, and repair-send if needed
 
-This is the scheduled/automatic dispatch part of the demo lifecycle. `learnbuddy schedule-exercise` records a parent-created timed exercise for later; it does not prove the learner saw anything. `dispatch-plan` is the delivery dispatcher: it opens and delivers one due scheduled or automatic exercise only when policy allows it (`daily_auto_limit`, `allowed_hours`, no current pending item). `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful delivery.
+This is the scheduled/automatic dispatch part of the demo lifecycle. `learnbuddy schedule-exercise` records a parent-created timed exercise for later; it does not prove the learner saw anything. `dispatch-plan` is the delivery dispatcher: it opens and delivers one due scheduled or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). `daily_auto_limit` gates automatic exercise selection; explicit parent-scheduled due exercises wait behind pending work, then dispatch even if the automatic daily limit is already used. `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful delivery.
 
 ```bash
 learnbuddy schedule-exercise \

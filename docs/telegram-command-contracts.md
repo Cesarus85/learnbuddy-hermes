@@ -53,7 +53,7 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 
 - Parent examples: `Starte den Lernplan`, `Schick eine geplante Aufgabe`, `Heute eine Mathe-Aufgabe aus dem Plan`
 - Tool: `learnbuddy_dispatch_plan`
-- Rule: policy-bounded. The command respects `allowed_hours`, `daily_auto_limit`, and existing pending sessions. It is also the dispatcher that makes due rows from `learnbuddy_schedule_exercise` child-visible by opening, delivering, and marking them dispatched.
+- Rule: policy-bounded. The command respects `allowed_hours` and existing pending sessions. `daily_auto_limit` gates automatic exercise selection; explicit due rows from `learnbuddy_schedule_exercise` wait behind an existing pending task, then dispatch even if the automatic daily limit is already used. It is also the dispatcher that makes scheduled rows child-visible by opening, delivering, and marking them dispatched.
 - Installable timer: `scripts/install-dispatch-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy dispatch-plan` repeatedly.
 
 ### Schedule one concrete exercise for later
@@ -93,7 +93,7 @@ The semantic classifier is **opt-in** and **bounded**:
 
 - With a pending task: the watcher replies that the learner should finish the current task first; attempts stay unchanged.
 - Without a pending task: the watcher may open and deliver exactly one automatic exercise through the scheduler-safe policy path.
-- Policy gates: `allowed_hours`, `daily_auto_limit`, no current pending session, and existing configured exercises only.
+- Policy gates: `allowed_hours`, no current pending session, and existing configured exercises only. `daily_auto_limit` applies to automatic plan selection, not to explicit parent-scheduled due rows.
 - Rejections are child-friendly (`daily_limit_reached`, `outside_allowed_hours`, or `no_matching_exercise`) and never trigger free-form LLM task generation. If the child asked for another task and LearnBuddy cannot open one, the watcher records a bounded parent-help request and notifies parents when parent notifications are enabled.
 
 ## Safety rules

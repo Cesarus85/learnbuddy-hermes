@@ -85,7 +85,7 @@ learnbuddy report --config ./learnbuddy.yaml --notify
 Expected behavior:
 
 - `doctor` prints variable names only, never secret values.
-- `dispatch-plan` opens and sends one automatic exercise only when policy allows it (`daily_auto_limit`, `allowed_hours`, no current pending item).
+- `dispatch-plan` opens and sends one due scheduled or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). `daily_auto_limit` gates automatic selection; explicit parent-scheduled due exercises wait behind pending work, then dispatch even if the automatic daily limit is already used.
 - `next --deliver` remains the manual parent-open path and records delivery metadata on the pending session.
 - `deliver-pending` repairs/resends the current pending prompt if the learner never saw it.
 - `report --notify` sends a parent summary through the parent adapter when configured.
