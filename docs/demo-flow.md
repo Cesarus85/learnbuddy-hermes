@@ -7,7 +7,7 @@ This is a complete public-alpha smoke path using synthetic data only. It is safe
 Prove the full lifecycle:
 
 ```text
-setup -> doctor -> queue -> schedule-exercise -> plan create -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> weekly-status --notify -> report --notify -> backup -> restore
+setup -> seed -> doctor -> queue -> schedule-exercise -> plan create -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> weekly-status --notify -> report --notify -> backup -> restore
 ```
 
 No Telegram token, chat ID, production child data, or private deployment path is needed.
@@ -29,7 +29,10 @@ learnbuddy setup \
   --child-id learner \
   --child-name Learner \
   --agent-name LearnBuddy
+learnbuddy seed --config ./learnbuddy.yaml --pack de/bavaria-realschule-grade-5
 ```
+
+The seed command imports the bundled public-safe Bavaria/Realschule grade-5 pack: 80 synthetic Mathe/Deutsch/Englisch tasks with topic metadata. It is idempotent, so reruns skip existing exercise IDs. With default paths the short form is `learnbuddy seed --pack de/bavaria-realschule-grade-5`.
 
 The generated YAML should contain:
 
@@ -48,9 +51,15 @@ learnbuddy doctor --config ./learnbuddy.yaml --format json
 
 Expected result: overall status is ok, storage is usable or creatable, and delivery is dry-run.
 
-## 4. Queue a synthetic fixture exercise
+## 4. Seed or queue synthetic exercises
 
-The fixture file is:
+The realistic public-safe starter pack is bundled in the package and can be imported directly:
+
+```bash
+learnbuddy seed --config ./learnbuddy.yaml --pack de/bavaria-realschule-grade-5
+```
+
+It imports 80 synthetic Bavaria/Realschule grade-5 exercises across Mathe, Deutsch, and Englisch. The tiny fixture file is still useful for smoke tests:
 
 ```text
 examples/exercises/de/grade-5-mixed.jsonl

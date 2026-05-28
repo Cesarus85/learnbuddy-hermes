@@ -498,6 +498,27 @@ def test_demo_exercise_fixture_is_valid_and_public_safe() -> None:
     assert {"math", "german", "english"} <= subjects
 
 
+def test_public_grade5_curriculum_pack_matches_vision_parity_scope() -> None:
+    fixture = ROOT / "src" / "learnbuddy_core" / "exercise_packs" / "de" / "bavaria-realschule-grade-5.jsonl"
+    rows = [json.loads(line) for line in fixture.read_text(encoding="utf-8").splitlines() if line.strip()]
+    subjects = {subject: sum(1 for row in rows if row.get("subject") == subject) for subject in {"math", "german", "english"}}
+    topics = {(row.get("subject"), row.get("topic")) for row in rows}
+
+    assert len(rows) == 80
+    assert subjects == {"math": 40, "german": 20, "english": 20}
+    assert len(topics) >= 18
+    assert all(row.get("id", "").startswith("de-by-rs5-") for row in rows)
+    assert all(row.get("school_context", {}).get("country_state") == "Bayern" for row in rows)
+    assert all(row.get("school_context", {}).get("school_type") == "Realschule" for row in rows)
+    assert all(row.get("school_context", {}).get("grade") == 5 for row in rows)
+    assert any(row.get("type") == "calculation_batch" for row in rows)
+    assert any(row.get("type") == "batch" for row in rows)
+    for row in rows:
+        assert row.get("prompt")
+        assert row.get("answer") is not None or row.get("expected_answers")
+        assert_public_safe_text(json.dumps(row, ensure_ascii=False))
+
+
 def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
     text = read_repo_file("INSTALL.md")
     required_snippets = [
@@ -506,6 +527,7 @@ def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
         "git clone https://github.com/Cesarus85/learnbuddy-hermes.git",
         "python -m pip install -e '.[test]'",
         "learnbuddy setup",
+        "learnbuddy seed --pack de/bavaria-realschule-grade-5",
         "learnbuddy doctor",
         "learnbuddy schedule-exercise",
         "learnbuddy plan create",
@@ -534,6 +556,7 @@ def test_demo_flow_documents_full_public_smoke_path() -> None:
     text = read_repo_file("docs/demo-flow.md")
     required_snippets = [
         "learnbuddy setup",
+        "learnbuddy seed --pack de/bavaria-realschule-grade-5",
         "learnbuddy doctor",
         "learnbuddy queue",
         "learnbuddy schedule-exercise",

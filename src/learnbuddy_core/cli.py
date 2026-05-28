@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from .config import LearnBuddyConfig
 from .delivery import DeliveryMessage, delivery_adapter_from_config
 from .doctor import build_doctor_report, doctor_exit_code, format_text_report
+from .exercise_packs import DEFAULT_PACK, available_packs, import_exercise_pack
 from .maintenance import backup_runtime_data, create_setup, restore_runtime_data
 from .notifier import ParentNotifier
 from .runtime import LearnBuddyRuntime
@@ -123,6 +124,17 @@ def cmd_setup(args: argparse.Namespace) -> int:
         delivery_mode=args.delivery_mode,
         force=args.force,
     )
+    if result.get("status") == "created" and args.exercise_pack:
+        config = LearnBuddyConfig.from_yaml(result["config_path"])
+        runtime = LearnBuddyRuntime(
+            Path(result["storage_dir"]),
+            max_attempts=config.max_attempts,
+            queue_max=config.queue_max,
+            child_id=config.child_id,
+            child_name=config.child_name,
+            agent_name=config.agent_name,
+        )
+        result["seed"] = import_exercise_pack(runtime, args.exercise_pack)
     if args.format == "json":
         _print_json(result)
     else:
@@ -131,6 +143,17 @@ def cmd_setup(args: argparse.Namespace) -> int:
             if result.get(key):
                 print(f"{key}={result[key]}")
     return 0 if result["status"] == "created" else 1
+
+
+def cmd_seed(args: argparse.Namespace) -> int:
+    if args.list:
+        _print_json({"status": "ok", "available_packs": available_packs(), "default_pack": DEFAULT_PACK})
+        return 0
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    result = import_exercise_pack(runtime, args.pack)
+    _print_json(result)
+    return 0
 
 
 def cmd_backup(args: argparse.Namespace) -> int:
@@ -451,9 +474,16 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--child-name", default="Learner")
     setup.add_argument("--agent-name", default="LearnBuddy")
     setup.add_argument("--delivery-mode", choices=["dry_run", "telegram"], default="dry_run")
+    setup.add_argument("--exercise-pack", help=f"optionally seed a bundled exercise pack, e.g. {DEFAULT_PACK}")
     setup.add_argument("--format", choices=["text", "json"], default="json")
     setup.add_argument("--force", action="store_true", help="overwrite an existing config file")
     setup.set_defaults(func=cmd_setup)
+
+    seed = sub.add_parser("seed", help="import a bundled public-safe exercise pack into local storage")
+    _add_runtime_options(seed)
+    seed.add_argument("--pack", default=DEFAULT_PACK, help=f"exercise pack to import; default: {DEFAULT_PACK}")
+    seed.add_argument("--list", action="store_true", help="list bundled exercise packs without importing")
+    seed.set_defaults(func=cmd_seed)
 
     backup = sub.add_parser("backup", help="create a zip backup of local runtime data")
     _add_runtime_options(backup)

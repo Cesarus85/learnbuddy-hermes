@@ -95,7 +95,10 @@ learnbuddy setup \
   --child-id learner \
   --child-name Learner \
   --agent-name LearnBuddy
+learnbuddy seed --config ./learnbuddy.yaml --pack de/bavaria-realschule-grade-5
 ```
+
+The seed command imports the bundled public-safe Bavaria/Realschule grade-5 exercise pack: 80 synthetic tasks across Mathe, Deutsch, and Englisch with topic metadata. It is idempotent, so rerunning it skips already imported exercise IDs. With default paths the short form is `learnbuddy seed --pack de/bavaria-realschule-grade-5`.
 
 The generated config should keep delivery disabled for the first run:
 
@@ -113,6 +116,7 @@ This step covers `learnbuddy schedule-exercise`, `learnbuddy plan`, `learnbuddy 
 
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
+learnbuddy seed --config ./learnbuddy.yaml --pack de/bavaria-realschule-grade-5
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
 learnbuddy schedule-exercise --config ./learnbuddy.yaml --subject math --prompt "8 + 9?" --answer "17" --due-at "2099-01-01T10:30:00+01:00"
 learnbuddy plan create --config ./learnbuddy.yaml --title "Mathe-Woche" --subject math --daily-goal 1
@@ -137,15 +141,21 @@ Expected first-run behavior:
 
 A fuller walkthrough lives in [`docs/demo-flow.md`](docs/demo-flow.md). For existing private deployments, use [`docs/production-migration-checklist.md`](docs/production-migration-checklist.md) before touching production.
 
-## 7. Optional: use the synthetic exercise fixture
+## 7. Optional: seed the grade-5 curriculum pack
 
-Public demo exercises live here:
+The tiny fixture remains useful for tests, but normal alpha pilots should start from the bundled public-safe exercise pack:
+
+```bash
+learnbuddy seed --config ./learnbuddy.yaml --pack de/bavaria-realschule-grade-5
+```
+
+It imports 80 synthetic Bavaria/Realschule grade-5 tasks across Mathe, Deutsch, and Englisch. It is not private production data.
+
+The small smoke fixture still lives here:
 
 ```text
 examples/exercises/de/grade-5-mixed.jsonl
 ```
-
-They are intentionally synthetic and cover math, German, and English. They are examples, not a curriculum.
 
 ## 8. Optional: install the Hermes plugin wrapper locally
 

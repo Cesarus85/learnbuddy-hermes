@@ -21,6 +21,9 @@ learnbuddy = "learnbuddy_core.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+learnbuddy_core = ["exercise_packs/**/*.jsonl"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

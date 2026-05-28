@@ -164,6 +164,46 @@ delivery:
     assert report["correct"] == 1
 
 
+def test_cli_seed_imports_public_grade5_pack_idempotently(capsys, tmp_path):
+    data_dir = tmp_path / "cli-seed-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  id: kid-seed
+  display_name: Robin
+agent:
+  name: StudyFox
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main(["seed", "--config", str(config_path), "--pack", "de/bavaria-realschule-grade-5"]) == 0
+    first = json.loads(capsys.readouterr().out)
+
+    assert first["status"] == "imported"
+    assert first["pack"] == "de/bavaria-realschule-grade-5"
+    assert first["imported"] >= 80
+    assert first["skipped_existing"] == 0
+    assert first["subjects"] == {"english": 20, "german": 20, "math": 40}
+
+    exercises = [json.loads(line) for line in (data_dir / "exercises.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(exercises) == first["imported"]
+    assert all(row.get("id", "").startswith("de-by-rs5-") for row in exercises)
+    assert all(row.get("topic") for row in exercises)
+    assert all(row.get("school_context", {}).get("grade") == 5 for row in exercises)
+
+    assert main(["seed", "--config", str(config_path), "--pack", "de/bavaria-realschule-grade-5"]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["status"] == "already_imported"
+    assert second["imported"] == 0
+    assert second["skipped_existing"] == first["imported"]
+
+
 def test_cli_next_exercise_can_dry_run_deliver(capsys, tmp_path):
     data_dir = tmp_path / "cli-delivery-data"
     config_path = tmp_path / "learnbuddy.yaml"

@@ -2,7 +2,7 @@
 
 Self-hosted, parent-controlled learning practice for families, built as a Hermes Agent extension pack.
 
-> Status: `0.1.2-alpha` installability alpha. The current alpha scope is Telegram-first: the core CLI, Docker Compose dry-run smoke, setup, doctor, backup/restore, Telegram contracts, examples, parent status automation, learning plans, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
+> Status: `0.1.2-alpha` installability alpha. The current alpha scope is Telegram-first: the core CLI, public grade-5 exercise seed pack, setup, doctor, backup/restore, Telegram contracts, examples, parent status automation, learning plans, and tests are usable for public evaluation. Use synthetic data until you have reviewed the safety and privacy docs for your own family.
 
 ## What this is
 
@@ -106,6 +106,7 @@ learnbuddy setup \
   --child-id learner \
   --child-name Learner \
   --agent-name LearnBuddy
+learnbuddy seed --config ./learnbuddy.yaml --pack de/bavaria-realschule-grade-5
 
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
@@ -125,17 +126,24 @@ pytest -q
 
 Expected delivery status in this quickstart: `dry_run` for both child delivery and parent notification.
 
-## Demo exercise fixture
+## Exercise packs
 
-Synthetic German grade-5 sample exercises live in:
+Two public-safe synthetic exercise sources ship with the repo:
 
 ```text
 examples/exercises/de/grade-5-mixed.jsonl
+src/learnbuddy_core/exercise_packs/de/bavaria-realschule-grade-5.jsonl
 ```
 
-They cover `math`, `german`, and `english` and are validated by `tests/test_public_alpha_assets.py`. They are examples, not a curriculum.
+The small `examples/.../grade-5-mixed.jsonl` fixture is a tiny smoke-test sample. For a realistic Telegram-first alpha start, import the bundled Bavaria/Realschule grade-5 pack instead:
 
-See [`docs/demo-flow.md`](docs/demo-flow.md) for a full copy/paste demo using the fixture.
+```bash
+learnbuddy seed --config ./learnbuddy.yaml --pack de/bavaria-realschule-grade-5
+```
+
+That pack contains 80 public-safe exercises across `math`, `german`, and `english`, with topic metadata aligned to the generic 5th-grade Bavaria/Realschule scope. It is synthetic curriculum seed data, not private production history.
+
+See [`docs/demo-flow.md`](docs/demo-flow.md) for a full copy/paste demo using the seed command.
 
 ## Telegram configuration
 
