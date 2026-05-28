@@ -286,6 +286,52 @@ delivery:
     assert result["session"]["requested_by"] == "system"
 
 
+def test_schedule_exercise_parent_tool_and_dispatch_due_delivery(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "scheduled-plugin-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+safety:
+  daily_auto_limit: 1
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    scheduled = json.loads(plugin.learnbuddy_schedule_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "10 + 20?",
+        "answer": "30",
+        "due_at": "2026-05-28T10:30:00+02:00",
+    }))
+    assert scheduled["status"] == "scheduled"
+
+    before_due = json.loads(plugin.learnbuddy_dispatch_plan({
+        "config_path": str(config_path),
+        "now": "2026-05-28T10:29:00+02:00",
+    }))
+    assert before_due["status"] == "no_due_scheduled_exercise"
+
+    dispatched = json.loads(plugin.learnbuddy_dispatch_plan({
+        "config_path": str(config_path),
+        "now": "2026-05-28T10:30:00+02:00",
+    }))
+
+    assert dispatched["status"] == "opened"
+    assert dispatched["scheduled"]["id"] == scheduled["scheduled"]["id"]
+    assert dispatched["delivery_status"] == "sent"
+    assert dispatched["delivery"]["status"] == "dry_run"
+    assert dispatched["session"]["source"] == "scheduled_exercise"
+
+
 def test_plugin_loads_default_env_file_before_delivery(tmp_path, monkeypatch):
     plugin = load_plugin()
     data_dir = tmp_path / "env-file-data"
@@ -354,6 +400,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_next_exercise",
         "learnbuddy_create_and_send_exercise",
         "learnbuddy_deliver_pending_exercise",
+        "learnbuddy_schedule_exercise",
         "learnbuddy_dispatch_plan",
         "learnbuddy_parent_command_contracts",
         "learnbuddy_submit_answer",
@@ -384,6 +431,12 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert repair_schema["properties"]["force"]["default"] is False
 
     dispatch_schema = ctx.tools["learnbuddy_dispatch_plan"]["schema"]["parameters"]
+    schedule_schema = ctx.tools["learnbuddy_schedule_exercise"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_schedule_exercise"]["toolset"] == "learnbuddy_learning"
+    assert schedule_schema["additionalProperties"] is False
+    assert schedule_schema["required"] == ["prompt", "due_at"]
+    assert {tuple(item["required"]) for item in schedule_schema["anyOf"]} == {("answer",), ("expected_answers",)}
+    assert "ISO timestamp" in schedule_schema["properties"]["due_at"]["description"]
     assert ctx.tools["learnbuddy_dispatch_plan"]["toolset"] == "learnbuddy_learning"
     assert dispatch_schema["additionalProperties"] is False
     assert dispatch_schema["properties"]["subject"]["enum"] == ["math", "german", "english", "general"]
@@ -438,7 +491,7 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
 
     assert contracts["status"] == "ok"
     operations = {item["operation"]: item for item in contracts["contracts"]}
-    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "automation_control", "resend_pending", "dispatch_plan", "create_and_send_exercise"}
+    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "automation_control", "resend_pending", "dispatch_plan", "create_and_send_exercise", "schedule_exercise"}
     assert operations["current_status"]["tool"] == "learnbuddy_learning_status"
     assert "Was ist offen?" in operations["current_status"]["examples"]
     assert operations["answer_status"]["tool"] == "learnbuddy_parent_answer_status"
@@ -457,6 +510,9 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert operations["create_and_send_exercise"]["tool"] == "learnbuddy_create_and_send_exercise"
     assert operations["create_and_send_exercise"]["requires"] == ["prompt", "answer_or_expected_answers"]
     assert "Frage Learner folgende Aufgaben" in operations["create_and_send_exercise"]["examples"]
+    assert operations["schedule_exercise"]["tool"] == "learnbuddy_schedule_exercise"
+    assert operations["schedule_exercise"]["requires"] == ["prompt", "answer_or_expected_answers", "due_at"]
+    assert "10:30" in operations["schedule_exercise"]["examples"][0]
     assert contracts["safety"]["no_child_toolset"] is True
     assert contracts["safety"]["no_unbounded_generation"] is True
 
@@ -490,12 +546,10 @@ delivery:
     first = json.loads(plugin.learnbuddy_daily_parent_status({
         "config_path": str(config_path),
         "notify": True,
-        "now": "2026-05-27T21:00:00+02:00",
     }))
     duplicate = json.loads(plugin.learnbuddy_daily_parent_status({
         "config_path": str(config_path),
         "notify": True,
-        "now": "2026-05-27T21:05:00+02:00",
     }))
     paused = json.loads(plugin.learnbuddy_parent_automation_control({
         "config_path": str(config_path),

@@ -159,6 +159,19 @@ def cmd_queue(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_schedule_exercise(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    result = runtime.schedule_exercise({
+        "subject": args.subject,
+        "type": args.type,
+        "prompt": args.prompt,
+        "answer": args.answer,
+    }, due_at=args.due_at)
+    _print_json({"status": "scheduled", **result})
+    return 0
+
+
 def cmd_next(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
     runtime = _runtime_from_args(args, config)
@@ -204,13 +217,21 @@ def cmd_dispatch_plan(args: argparse.Namespace) -> int:
     if auto_count >= config.daily_auto_limit:
         _print_json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
         return 0
+    scheduled = None
+    if not args.exercise_id and not args.subject:
+        scheduled = runtime.next_due_scheduled_exercise(now=now.isoformat(), timezone_name=config.timezone)
+        if scheduled is None and runtime.pending_scheduled_exercises():
+            _print_json({"status": "no_due_scheduled_exercise", "now": now.isoformat()})
+            return 0
     try:
         result = runtime.open_exercise(
-            args.exercise_id,
+            args.exercise_id or (str(scheduled.get("exercise_id")) if isinstance(scheduled, dict) else None),
             subject=args.subject,
             mode="auto",
             requested_by="system",
             timestamp=now.astimezone(ZoneInfo("UTC")).isoformat(),
+            source="scheduled_exercise" if scheduled else None,
+            scheduled_id=str(scheduled.get("id")) if isinstance(scheduled, dict) else None,
         )
     except KeyError as exc:
         _print_json({"status": "no_matching_exercise", "error": str(exc)})
@@ -220,6 +241,12 @@ def cmd_dispatch_plan(args: argparse.Namespace) -> int:
         result["delivery"] = delivery_result.get("delivery")
         result["delivery_status"] = delivery_result.get("status")
         result["session"] = delivery_result.get("session") or result.get("session")
+        if scheduled:
+            result["scheduled"] = runtime.mark_scheduled_exercise_dispatched(
+                str(scheduled.get("id")),
+                session_id=(result.get("session") or {}).get("id") if isinstance(result.get("session"), dict) else None,
+                delivery_result=delivery_result.get("delivery"),
+            )
     _print_json(result)
     return 0
 
@@ -367,6 +394,15 @@ def build_parser() -> argparse.ArgumentParser:
     queue.add_argument("--prompt", required=True)
     queue.add_argument("--answer", required=True)
     queue.set_defaults(func=cmd_queue)
+
+    schedule = sub.add_parser("schedule-exercise", help="create an exercise and dispatch it later via dispatch-plan")
+    _add_runtime_options(schedule)
+    schedule.add_argument("--subject", default="general")
+    schedule.add_argument("--type", default="short")
+    schedule.add_argument("--prompt", required=True)
+    schedule.add_argument("--answer", required=True)
+    schedule.add_argument("--due-at", required=True, help="ISO timestamp when dispatch-plan may deliver the exercise")
+    schedule.set_defaults(func=cmd_schedule_exercise)
 
     next_exercise = sub.add_parser("next", help="open or queue the next exercise")
     _add_runtime_options(next_exercise)

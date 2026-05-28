@@ -84,11 +84,12 @@ delivery.mode: dry_run
 
 ## 5. Run the full dry-run smoke test
 
-This step covers `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path.
+This step covers `learnbuddy schedule-exercise`, `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path.
 
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
+learnbuddy schedule-exercise --config ./learnbuddy.yaml --subject math --prompt "8 + 9?" --answer "17" --due-at "2099-01-01T10:30:00+01:00"
 learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
 learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy answer --config ./learnbuddy.yaml "4"
@@ -153,7 +154,7 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter → persist delivery metadata. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic exercise, respecting daily limit, allowed hours, and current pending state. `learnbuddy_daily_parent_status` sends at most one local-day parent status, respects `pause_today`, skips duplicate sends, and skips empty days unless `include_empty=true`; `learnbuddy_parent_automation_control` handles `heute pausieren`/resume/status commands. `learnbuddy_deliver_pending_exercise` repairs/resends the current pending prompt when the learner did not receive it. It also exposes `learnbuddy_parent_help_request` as the public-safe parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, scheduled dispatch is policy-bounded, repair/resend is explicit, help/report/status pushes require explicit notification flags, and status reads do not send messages.
+`LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter → persist delivery metadata. `learnbuddy_schedule_exercise` creates a concrete one-shot task for later delivery; it requires `due_at` plus `answer_or_expected_answers`, stores the task in scheduled runtime data, and relies on `learnbuddy_dispatch_plan` to make it child-visible when due. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic or scheduled exercise, respecting daily limit, allowed hours, and current pending state. `learnbuddy_daily_parent_status` sends at most one local-day parent status, respects `pause_today`, skips duplicate sends, and skips empty days unless `include_empty=true`; `learnbuddy_parent_automation_control` handles `heute pausieren`/resume/status commands. `learnbuddy_deliver_pending_exercise` repairs/resends the current pending prompt when the learner did not receive it. It also exposes `learnbuddy_parent_help_request` as the public-safe parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, scheduled dispatch is policy-bounded, repair/resend is explicit, help/report/status pushes require explicit notification flags, and status reads do not send messages.
 
 The parent/main profile can use the broad `learnbuddy_learning` toolset for parent/admin commands. A child-facing profile should be created separately as a full child-facing Hermes Agent with the `learnbuddy_child` baseline plus explicit capability levels (`locked`, `guided`, `curious`, `teen-supervised`). Do not clone a parent/admin profile wholesale; upgrades need parent approval, audit, and a downgrade path.
 
@@ -200,6 +201,20 @@ Start/enable it only after the child profile `.env` has a dedicated `TELEGRAM_BO
 scripts/install-child-gateway-service.sh --profile learnbuddy-child --enable --start
 ```
 
+Optional scheduled-exercise dispatch timer:
+
+```bash
+scripts/install-dispatch-timer.sh \
+  --profile learnbuddy-parent \
+  --config ./learnbuddy.yaml \
+  --env-file ./learnbuddy.env \
+  --on-unit-active-sec 5min \
+  --python ./.venv/bin/python \
+  --enable --start
+```
+
+The generated systemd user timer runs `learnbuddy dispatch-plan` repeatedly. This is the delivery belt for parent-created timed tasks from `learnbuddy schedule-exercise` / `learnbuddy_schedule_exercise`: scheduling persists the row, but dispatching is what opens the session, sends it to the child adapter, writes delivery metadata, and marks the scheduled item dispatched. Keep this timer separate from the daily-status timer; `learnbuddy daily-status --notify` reports to parents and will not deliver due child tasks.
+
 Optional daily parent status timer:
 
 ```bash
@@ -245,6 +260,7 @@ Run:
 
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
+learnbuddy schedule-exercise --config ./learnbuddy.yaml --subject math --prompt "8 + 9?" --answer "17" --due-at "2099-01-01T10:30:00+01:00"
 learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
 learnbuddy deliver-pending --config ./learnbuddy.yaml
 # Manual parent-open path: learnbuddy next --deliver
@@ -253,7 +269,7 @@ learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnb
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 
-`doctor` reports missing variable names, not secret values. `dispatch-plan` is safe to run from cron/systemd: it opens and delivers at most one automatic exercise when allowed-hours and daily-limit policy permit it and no exercise is already pending. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background. If a pending exercise has no successful child-delivery metadata, the watcher repairs that by sending the current prompt before waiting for another answer; `learnbuddy deliver-pending` gives the same repair path as an explicit operator command.
+`doctor` reports missing variable names, not secret values. `schedule-exercise` records a concrete timed task; it does not send by itself. `dispatch-plan` is safe to run from cron/systemd: it opens and delivers at most one due scheduled or automatic exercise when allowed-hours and daily-limit policy permit it and no exercise is already pending. Use `scripts/install-dispatch-timer.sh` for the recurring dispatcher path. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background. If a pending exercise has no successful child-delivery metadata, the watcher repairs that by sending the current prompt before waiting for another answer; `learnbuddy deliver-pending` gives the same repair path as an explicit operator command.
 
 ## 9. VPS notes
 

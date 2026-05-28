@@ -7,7 +7,7 @@ This is a complete public-alpha smoke path using synthetic data only. It is safe
 Prove the full lifecycle:
 
 ```text
-setup -> doctor -> queue -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> report --notify -> backup -> restore
+setup -> doctor -> queue -> schedule-exercise -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> report --notify -> backup -> restore
 ```
 
 No Telegram token, chat ID, production child data, or private deployment path is needed.
@@ -68,11 +68,17 @@ learnbuddy queue \
 
 The command returns JSON with an exercise id.
 
-## 5. Open, dry-run deliver, and repair-send if needed
+## 5. Schedule/open, dry-run deliver, and repair-send if needed
 
-This is the scheduled/automatic dispatch part of the demo lifecycle. `dispatch-plan` opens and delivers one automatic exercise only when policy allows it (`daily_auto_limit`, `allowed_hours`, no current pending item). `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful delivery.
+This is the scheduled/automatic dispatch part of the demo lifecycle. `learnbuddy schedule-exercise` records a parent-created timed exercise for later; it does not prove the learner saw anything. `dispatch-plan` is the delivery dispatcher: it opens and delivers one due scheduled or automatic exercise only when policy allows it (`daily_auto_limit`, `allowed_hours`, no current pending item). `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful delivery.
 
 ```bash
+learnbuddy schedule-exercise \
+  --config ./learnbuddy.yaml \
+  --subject math \
+  --prompt "Berechne: 8 + 9." \
+  --answer "17" \
+  --due-at "2099-01-01T10:30:00+01:00"
 learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
 learnbuddy deliver-pending --config ./learnbuddy.yaml
 # Manual parent-open path still exists: learnbuddy next --deliver
@@ -109,7 +115,7 @@ learnbuddy backup --config ./learnbuddy.yaml --output ./learnbuddy-backup.zip
 learnbuddy restore --archive ./learnbuddy-backup.zip --data-dir ./restored-learnbuddy-data
 ```
 
-Restore refuses to overwrite existing data unless `--force` is passed.
+Restore refuses to overwrite existing data unless `--force` is passed. Backups include scheduled exercises too, so parent-timed tasks survive restore instead of quietly vanishing like cowards.
 
 ## 9. Run tests
 

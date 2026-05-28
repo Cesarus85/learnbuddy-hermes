@@ -73,11 +73,13 @@ def test_public_docs_include_telegram_parent_command_contracts() -> None:
         "heute pausieren",
         "learnbuddy_deliver_pending_exercise",
         "learnbuddy_dispatch_plan",
+        "learnbuddy_schedule_exercise",
         "learnbuddy_create_and_send_exercise",
         "answer_or_expected_answers",
         "Frage Learner folgende Aufgaben",
         "scripts/setup-parent-profile.sh",
         "scripts/install-daily-status-timer.sh",
+        "scripts/install-dispatch-timer.sh",
         "Web/PWA",
     ]
     assert_public_safe_text(text)
@@ -89,15 +91,18 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
     soul = read_repo_file("templates/parent-profile/SOUL.md")
     script = read_repo_file("scripts/setup-parent-profile.sh")
     daily_timer = read_repo_file("scripts/install-daily-status-timer.sh")
+    dispatch_timer = read_repo_file("scripts/install-dispatch-timer.sh")
     install = read_repo_file("INSTALL.md")
 
-    for text in (soul, script, daily_timer, install):
+    for text in (soul, script, daily_timer, dispatch_timer, install):
         assert_public_safe_text(text)
 
     required_soul_snippets = [
         "learnbuddy_parent_command_contracts",
         "learnbuddy_learning_status",
         "learnbuddy_create_and_send_exercise",
+        "learnbuddy_schedule_exercise",
+        "learnbuddy_dispatch_plan",
         "learnbuddy_daily_parent_status",
         "learnbuddy_parent_automation_control",
         "answer_or_expected_answers",
@@ -133,6 +138,19 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
     for snippet in required_timer_snippets:
         assert snippet in daily_timer
     assert "scripts/install-daily-status-timer.sh" in install
+    required_dispatch_timer_snippets = [
+        "learnbuddy dispatch-plan",
+        "OnUnitActiveSec",
+        "Persistent=true",
+        ".venv/bin/python",
+        "--config",
+        "python3",
+        "systemd --user timer",
+        "due scheduled exercises",
+    ]
+    for snippet in required_dispatch_timer_snippets:
+        assert snippet in dispatch_timer
+    assert "scripts/install-dispatch-timer.sh" in install
 
 
 def test_telegram_quickstart_documents_child_control_messages() -> None:
@@ -330,6 +348,7 @@ def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
         "python -m pip install -e '.[test]'",
         "learnbuddy setup",
         "learnbuddy doctor",
+        "learnbuddy schedule-exercise",
         "learnbuddy dispatch-plan",
         "learnbuddy next --deliver",
         "learnbuddy deliver-pending",
@@ -339,6 +358,7 @@ def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
         "hermes plugins",
         "learnbuddy_child",
         "scripts/setup-child-profile.sh",
+        "scripts/install-dispatch-timer.sh",
         "pytest -q",
     ]
     assert_public_safe_text(text)
@@ -352,6 +372,7 @@ def test_demo_flow_documents_full_public_smoke_path() -> None:
         "learnbuddy setup",
         "learnbuddy doctor",
         "learnbuddy queue",
+        "learnbuddy schedule-exercise",
         "learnbuddy dispatch-plan",
         "learnbuddy next --deliver",
         "learnbuddy deliver-pending",

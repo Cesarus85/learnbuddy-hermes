@@ -19,6 +19,8 @@ The local runtime currently uses JSON/JSONL files for:
 - pending/completed state
 - submitted answers
 - attempt/session history
+- parent help requests
+- parent-scheduled exercises and their dispatch status
 
 These files are acceptable for alpha because they are easy to inspect and backup. They are also private family data once real content is used.
 

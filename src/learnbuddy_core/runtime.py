@@ -38,6 +38,10 @@ class RuntimePaths:
         return self.data_dir / "help_requests.jsonl"
 
     @property
+    def scheduled_exercises(self) -> Path:
+        return self.data_dir / "scheduled_exercises.jsonl"
+
+    @property
     def state(self) -> Path:
         return self.data_dir / "state.json"
 
@@ -202,11 +206,67 @@ class LearnBuddyRuntime:
     def exercises(self) -> list[dict[str, Any]]:
         return _read_jsonl(self.paths.exercises)
 
+    def scheduled_exercises(self) -> list[dict[str, Any]]:
+        return _read_jsonl(self.paths.scheduled_exercises)
+
     def sessions(self) -> list[dict[str, Any]]:
         return _read_jsonl(self.paths.sessions)
 
     def status(self) -> dict[str, Any]:
         return self._state()
+
+    def schedule_exercise(self, exercise: dict[str, Any], *, due_at: str) -> dict[str, Any]:
+        """Create an exercise and record a one-shot parent-scheduled dispatch time."""
+        due = _local_datetime(str(due_at), "Europe/Berlin")
+        exercise_row = self.add_exercise(exercise)
+        row = {
+            "id": f"sched-{uuid.uuid4().hex[:12]}",
+            "exercise_id": exercise_row["id"],
+            "due_at": due.isoformat(),
+            "status": "pending",
+            "created_at": _now(),
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
+        }
+        _append_jsonl(self.paths.scheduled_exercises, row)
+        return {"scheduled": row, "exercise": exercise_row}
+
+    def pending_scheduled_exercises(self) -> list[dict[str, Any]]:
+        return [row for row in self.scheduled_exercises() if row.get("status") in (None, "", "pending")]
+
+    def next_due_scheduled_exercise(self, *, now: str | None = None, timezone_name: str = "Europe/Berlin") -> dict[str, Any] | None:
+        current = _local_datetime(now, timezone_name)
+        due_rows: list[dict[str, Any]] = []
+        for row in self.pending_scheduled_exercises():
+            try:
+                due = _local_datetime(str(row.get("due_at") or ""), timezone_name)
+            except ValueError:
+                continue
+            if due <= current:
+                due_rows.append(row)
+        due_rows.sort(key=lambda item: str(item.get("due_at") or ""))
+        return due_rows[0] if due_rows else None
+
+    def mark_scheduled_exercise_dispatched(
+        self,
+        schedule_id: str,
+        *,
+        session_id: str | None = None,
+        delivery_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        rows = self.scheduled_exercises()
+        for index, row in enumerate(rows):
+            if str(row.get("id") or "") != str(schedule_id):
+                continue
+            row = dict(row)
+            row.update({"status": "dispatched", "dispatched_at": _now(), "session_id": session_id})
+            if delivery_result is not None:
+                row["delivery"] = delivery_result
+            rows[index] = row
+            _write_jsonl(self.paths.scheduled_exercises, rows)
+            return row
+        return None
 
     def mark_pending_delivery(self, delivery_result: dict[str, Any], *, recipient: str = "child") -> dict[str, Any] | None:
         """Persist user-visible delivery metadata for the current pending session."""
@@ -244,10 +304,19 @@ class LearnBuddyRuntime:
         mode: str = "manual",
         requested_by: str = "parent",
         timestamp: str | None = None,
+        source: str | None = None,
+        scheduled_id: str | None = None,
     ) -> dict[str, Any]:
         exercise = self._choose_exercise(exercise_id=exercise_id, subject=subject)
         state = self._state()
-        session = self._make_session(exercise, mode=mode, requested_by=requested_by, timestamp=timestamp)
+        session = self._make_session(
+            exercise,
+            mode=mode,
+            requested_by=requested_by,
+            timestamp=timestamp,
+            source=source,
+            scheduled_id=scheduled_id,
+        )
         if state.get("pending"):
             queue_item = dict(session)
             queue_item["queued_at"] = _now()
@@ -723,8 +792,17 @@ class LearnBuddyRuntime:
     def _exercise_by_id(self, exercise_id: str) -> dict[str, Any]:
         return self._choose_exercise(exercise_id=exercise_id)
 
-    def _make_session(self, exercise: dict[str, Any], *, mode: str, requested_by: str, timestamp: str | None = None) -> dict[str, Any]:
-        return {
+    def _make_session(
+        self,
+        exercise: dict[str, Any],
+        *,
+        mode: str,
+        requested_by: str,
+        timestamp: str | None = None,
+        source: str | None = None,
+        scheduled_id: str | None = None,
+    ) -> dict[str, Any]:
+        session = {
             "id": f"sess-{uuid.uuid4().hex[:12]}",
             "exercise_id": exercise["id"],
             "child_id": self.child_id,
@@ -739,6 +817,11 @@ class LearnBuddyRuntime:
             "requested_by": requested_by,
             "timestamp": timestamp or _now(),
         }
+        if source:
+            session["source"] = source
+        if scheduled_id:
+            session["scheduled_id"] = scheduled_id
+        return session
 
     def _promote_next(self, state: dict[str, Any]) -> dict[str, Any] | None:
         queue = state.setdefault("queue", [])

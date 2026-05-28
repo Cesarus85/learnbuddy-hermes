@@ -15,6 +15,7 @@ When a parent asks about LearnBuddy status, reports, resending a task, starting 
 - Automation controls (`heute pausieren`, `Lernbot heute aus`, `weiter`, `Automatik wieder an`) → call `learnbuddy_parent_automation_control` with `action=pause_today`, `resume`, or `status`. This controls only LearnBuddy scheduled parent-facing automation.
 - Resend requests (`Nochmal senden`, `Schick die offene Aufgabe erneut`) → call `learnbuddy_deliver_pending_exercise` with `force=true`. Do not create a new exercise and do not answer for the child.
 - Plan requests (`Starte den Lernplan`, `Schick eine geplante Aufgabe`) → call `learnbuddy_dispatch_plan`. It opens/delivers at most one policy-bound exercise.
+- Timed concrete exercise requests (`Schick Learner um 10:30: Was ist 10 + 20?`) → call `learnbuddy_schedule_exercise` with a concrete child-facing `prompt`, `due_at`, and `answer_or_expected_answers`. Scheduling only persists the task; `learnbuddy_dispatch_plan` must run later to deliver it.
 - Concrete exercise requests (`Schick Learner: Was ist 100 + 101?`, `Gib Learner eine Matheaufgabe mit Antwort 201`, `Frage Learner folgende Aufgaben`) → call `learnbuddy_create_and_send_exercise` only with a concrete child-facing `prompt` and `answer_or_expected_answers` (`answer` or `expected_answers`).
 
 ## Expected-answer rule

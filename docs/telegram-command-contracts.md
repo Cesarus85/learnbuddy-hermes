@@ -53,7 +53,15 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 
 - Parent examples: `Starte den Lernplan`, `Schick eine geplante Aufgabe`, `Heute eine Mathe-Aufgabe aus dem Plan`
 - Tool: `learnbuddy_dispatch_plan`
-- Rule: policy-bounded. The command respects `allowed_hours`, `daily_auto_limit`, and existing pending sessions.
+- Rule: policy-bounded. The command respects `allowed_hours`, `daily_auto_limit`, and existing pending sessions. It is also the dispatcher that makes due rows from `learnbuddy_schedule_exercise` child-visible by opening, delivering, and marking them dispatched.
+- Installable timer: `scripts/install-dispatch-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy dispatch-plan` repeatedly.
+
+### Schedule one concrete exercise for later
+
+- Parent examples: `Schick Learner um 10:30: Was ist 10 + 20?`, `Plane für morgen 16:00 eine Matheaufgabe mit Antwort 30`
+- Tool: `learnbuddy_schedule_exercise`
+- Required args: `prompt`, `due_at`, plus `answer_or_expected_answers` (`answer` or ordered `expected_answers`)
+- Rule: creates a concrete one-shot scheduled exercise only. It does **not** send immediately; a recurring dispatcher such as `scripts/install-dispatch-timer.sh` must run `learnbuddy_dispatch_plan` for due delivery.
 
 ### Create and send one concrete exercise
 

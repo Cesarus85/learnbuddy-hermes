@@ -228,6 +228,51 @@ delivery:
     assert skipped["status"] == "pending_exists"
 
 
+def test_cli_schedule_exercise_defers_until_due_then_delivers(capsys, tmp_path):
+    data_dir = tmp_path / "cli-scheduled-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+safety:
+  daily_auto_limit: 1
+  allowed_hours:
+    from: "07:00"
+    to: "21:00"
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main([
+        "schedule-exercise",
+        "--config", str(config_path),
+        "--subject", "math",
+        "--prompt", "10 + 20?",
+        "--answer", "30",
+        "--due-at", "2026-05-28T10:30:00+02:00",
+    ]) == 0
+    scheduled = json.loads(capsys.readouterr().out)
+    assert scheduled["status"] == "scheduled"
+    schedule_id = scheduled["scheduled"]["id"]
+
+    assert main(["dispatch-plan", "--config", str(config_path), "--now", "2026-05-28T10:29:00+02:00"]) == 0
+    before_due = json.loads(capsys.readouterr().out)
+    assert before_due["status"] == "no_due_scheduled_exercise"
+
+    assert main(["dispatch-plan", "--config", str(config_path), "--now", "2026-05-28T10:30:00+02:00"]) == 0
+    dispatched = json.loads(capsys.readouterr().out)
+
+    assert dispatched["status"] == "opened"
+    assert dispatched["scheduled"]["id"] == schedule_id
+    assert dispatched["delivery_status"] == "sent"
+    assert dispatched["delivery"]["status"] == "dry_run"
+    assert dispatched["session"]["mode"] == "auto"
+    assert dispatched["session"]["requested_by"] == "system"
+    assert dispatched["session"]["source"] == "scheduled_exercise"
+
+
 def test_cli_dispatch_plan_respects_allowed_hours(capsys, tmp_path):
     data_dir = tmp_path / "cli-dispatch-hours-data"
     config_path = tmp_path / "learnbuddy.yaml"
@@ -343,7 +388,7 @@ delivery:
     assert main(["answer", "--config", str(config_path), "9"]) == 0
     capsys.readouterr()
 
-    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    assert main(["daily-status", "--config", str(config_path), "--notify"]) == 0
     result = json.loads(capsys.readouterr().out)
 
     assert result["status"] == "sent"
@@ -376,14 +421,14 @@ delivery:
     assert main(["answer", "--config", str(config_path), "9"]) == 0
     capsys.readouterr()
 
-    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    assert main(["daily-status", "--config", str(config_path), "--notify"]) == 0
     first = json.loads(capsys.readouterr().out)
     assert first["status"] == "sent"
     assert first["report"]["answers"] == 1
     assert first["notification"]["status"] == "dry_run"
     assert "Tagesstatus" in first["report"]["text"]
 
-    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:30:00+02:00"]) == 0
+    assert main(["daily-status", "--config", str(config_path), "--notify"]) == 0
     duplicate = json.loads(capsys.readouterr().out)
     assert duplicate["status"] == "already_sent"
     assert duplicate["notification"] is None
@@ -464,7 +509,7 @@ delivery:
     assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
     capsys.readouterr()
 
-    assert main(["daily-status", "--config", str(config_path), "--notify", "--now", "2026-05-27T21:00:00+02:00"]) == 0
+    assert main(["daily-status", "--config", str(config_path), "--notify"]) == 0
     result = json.loads(capsys.readouterr().out)
 
     assert result["status"] == "sent"
@@ -565,13 +610,29 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
     capsys.readouterr()
     assert main(["help-request", "--data-dir", str(data_dir), "--reason", "Need a hint."]) == 0
     capsys.readouterr()
+    assert main([
+        "schedule-exercise",
+        "--data-dir", str(data_dir),
+        "--subject", "math",
+        "--prompt", "8 + 9?",
+        "--answer", "17",
+        "--due-at", "2026-05-28T10:30:00+02:00",
+    ]) == 0
+    capsys.readouterr()
 
     assert main(["backup", "--data-dir", str(data_dir), "--output", str(archive_path)]) == 0
     backup = json.loads(capsys.readouterr().out)
     assert backup["status"] == "created"
     assert backup["archive_path"] == str(archive_path)
     assert archive_path.exists()
-    assert set(backup["files"]) >= {"answers.jsonl", "exercises.jsonl", "sessions.jsonl", "state.json", "help_requests.jsonl"}
+    assert set(backup["files"]) >= {
+        "answers.jsonl",
+        "exercises.jsonl",
+        "sessions.jsonl",
+        "state.json",
+        "help_requests.jsonl",
+        "scheduled_exercises.jsonl",
+    }
 
     assert main(["restore", "--archive", str(archive_path), "--data-dir", str(restore_dir)]) == 0
     restore = json.loads(capsys.readouterr().out)
@@ -579,6 +640,7 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
     assert restore["data_dir"] == str(restore_dir)
     assert sorted(restore["files"]) == sorted(backup["files"])
     assert (restore_dir / "answers.jsonl").read_text(encoding="utf-8") == (data_dir / "answers.jsonl").read_text(encoding="utf-8")
+    assert (restore_dir / "scheduled_exercises.jsonl").read_text(encoding="utf-8") == (data_dir / "scheduled_exercises.jsonl").read_text(encoding="utf-8")
 
 
 def test_cli_restore_refuses_to_overwrite_existing_data_without_force(capsys, tmp_path):

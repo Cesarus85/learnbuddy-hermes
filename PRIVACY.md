@@ -25,6 +25,7 @@ Depending on configuration, a LearnBuddy installation may store:
 - parent notification preferences
 - delivery status metadata
 - learning plan or subject settings
+- parent-scheduled exercises and dispatch status
 - backup archives of the runtime files
 
 These files become private family data once real content is entered.

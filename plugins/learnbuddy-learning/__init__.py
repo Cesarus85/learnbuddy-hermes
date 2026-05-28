@@ -19,7 +19,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.15"
+PLUGIN_VERSION = "0.1.0-alpha.16"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -80,6 +80,13 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
         "requires": ["prompt", "answer_or_expected_answers"],
         "policy": "Use only when the parent provides or the agent deterministically verifies a concrete child-facing prompt plus expected answer(s) before sending.",
     },
+    {
+        "operation": "schedule_exercise",
+        "tool": "learnbuddy_schedule_exercise",
+        "examples": ["Schick Learner um 10:30: Was ist 10 + 20?", "Plane für morgen 16:00 eine Matheaufgabe mit Antwort 30"],
+        "requires": ["prompt", "answer_or_expected_answers", "due_at"],
+        "policy": "Creates a concrete one-shot exercise for later delivery. A dispatcher timer must run learnbuddy_dispatch_plan; scheduling alone does not prove child-visible delivery.",
+    },
 ]
 
 COMMON_PROPERTIES: dict[str, Any] = {
@@ -123,6 +130,16 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {**EXERCISE_PROPERTIES, "deliver": {"type": "boolean", "default": True}},
         "required": ["prompt"],
+        "anyOf": [{"required": ["answer"]}, {"required": ["expected_answers"]}],
+        "additionalProperties": False,
+    },
+    "learnbuddy_schedule_exercise": {
+        "type": "object",
+        "properties": {
+            **EXERCISE_PROPERTIES,
+            "due_at": {"type": "string", "description": "ISO timestamp when dispatch-plan may deliver the exercise, e.g. 2026-05-28T10:30:00+02:00."},
+        },
+        "required": ["prompt", "due_at"],
         "anyOf": [{"required": ["answer"]}, {"required": ["expected_answers"]}],
         "additionalProperties": False,
     },
@@ -387,6 +404,30 @@ def learnbuddy_deliver_pending_exercise(args: dict[str, Any] | None = None) -> s
     return _json(_deliver_pending_child_prompt(config, runtime, force=bool(args.get("force", False))))
 
 
+def learnbuddy_schedule_exercise(args: dict[str, Any] | None = None) -> str:
+    """Parent UX: create a concrete one-shot exercise for later dispatcher delivery."""
+    args = dict(args or {})
+    if not _has_expected_answer(args):
+        return _json({
+            "status": "missing_expected_answer",
+            "error": "learnbuddy_schedule_exercise requires answer or expected_answers before scheduling a child-facing exercise.",
+        })
+    if not args.get("due_at"):
+        return _json({"status": "missing_due_at", "error": "learnbuddy_schedule_exercise requires due_at."})
+    runtime = _runtime(args)
+    result = runtime.schedule_exercise({
+        "subject": args.get("subject", "general"),
+        "type": args.get("type", "short"),
+        "prompt": args["prompt"],
+        "answer": args.get("answer"),
+        "expected_answers": args.get("expected_answers"),
+        "aliases": args.get("aliases"),
+        "difficulty": args.get("difficulty"),
+        "topic": args.get("topic"),
+    }, due_at=str(args.get("due_at")))
+    return _json({"status": "scheduled", **result})
+
+
 def learnbuddy_dispatch_plan(args: dict[str, Any] | None = None) -> str:
     """Open and deliver one automatic exercise when schedule policy allows it."""
     args = dict(args or {})
@@ -405,13 +446,20 @@ def learnbuddy_dispatch_plan(args: dict[str, Any] | None = None) -> str:
     auto_count = _auto_sessions_today(runtime, now, config.timezone)
     if auto_count >= config.daily_auto_limit:
         return _json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
+    scheduled = None
+    if not args.get("exercise_id") and not args.get("subject"):
+        scheduled = runtime.next_due_scheduled_exercise(now=now.isoformat(), timezone_name=config.timezone)
+        if scheduled is None and runtime.pending_scheduled_exercises():
+            return _json({"status": "no_due_scheduled_exercise", "now": now.isoformat()})
     try:
         result = runtime.open_exercise(
-            args.get("exercise_id"),
+            args.get("exercise_id") or (str(scheduled.get("exercise_id")) if isinstance(scheduled, dict) else None),
             subject=args.get("subject"),
             mode="auto",
             requested_by="system",
             timestamp=now.astimezone(ZoneInfo("UTC")).isoformat(),
+            source="scheduled_exercise" if scheduled else None,
+            scheduled_id=str(scheduled.get("id")) if isinstance(scheduled, dict) else None,
         )
     except KeyError as exc:
         return _json({"status": "no_matching_exercise", "error": str(exc)})
@@ -420,6 +468,12 @@ def learnbuddy_dispatch_plan(args: dict[str, Any] | None = None) -> str:
         result["delivery"] = delivery_result.get("delivery")
         result["delivery_status"] = delivery_result.get("status")
         result["session"] = delivery_result.get("session") or result.get("session")
+        if scheduled:
+            result["scheduled"] = runtime.mark_scheduled_exercise_dispatched(
+                str(scheduled.get("id")),
+                session_id=(result.get("session") or {}).get("id") if isinstance(result.get("session"), dict) else None,
+                delivery_result=delivery_result.get("delivery"),
+            )
     return _json(result)
 
 
@@ -650,6 +704,7 @@ TOOLS = [
     ("learnbuddy_next_exercise", learnbuddy_next_exercise, "learnbuddy_learning", "Open an existing LearnBuddy exercise. Set deliver=true only when the parent asked to send/open it now."),
     ("learnbuddy_create_and_send_exercise", learnbuddy_create_and_send_exercise, "learnbuddy_learning", "Parent UX one-shot: create a short exercise, open it, and deliver it to the child. Do not call without a concrete prompt and expected answer(s)."),
     ("learnbuddy_deliver_pending_exercise", learnbuddy_deliver_pending_exercise, "learnbuddy_learning", "Repair or resend the current pending prompt to the child. Use when a parent reports that the learner did not receive the task."),
+    ("learnbuddy_schedule_exercise", learnbuddy_schedule_exercise, "learnbuddy_learning", "Parent UX one-shot scheduling: create a concrete exercise with an expected answer and due_at for later dispatcher delivery."),
     ("learnbuddy_dispatch_plan", learnbuddy_dispatch_plan, "learnbuddy_learning", "Scheduler-safe: open and deliver one due automatic LearnBuddy exercise when allowed-hours and daily-limit policy permit it."),
     ("learnbuddy_parent_command_contracts", learnbuddy_parent_command_contracts, "learnbuddy_learning", "Parent command contract reference for Telegram routing: status, report, resend pending, dispatch plan, and create/send exercise. Read before improvising ambiguous parent commands."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
