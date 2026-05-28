@@ -61,7 +61,7 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 
 - Parent examples: `Starte den Lernplan`, `Schick eine geplante Aufgabe`, `Heute eine Mathe-Aufgabe aus dem Plan`
 - Tool: `learnbuddy_dispatch_plan`
-- Rule: policy-bounded. The command respects `allowed_hours` and existing pending sessions. `daily_auto_limit` gates automatic exercise selection; explicit due rows from `learnbuddy_schedule_exercise` wait behind an existing pending task, then dispatch even if the automatic daily limit is already used. It is also the dispatcher that makes scheduled rows child-visible by opening, delivering, and marking them dispatched.
+- Rule: policy-bounded. The command respects `allowed_hours` and existing pending sessions. `daily_auto_limit` gates automatic exercise selection; `queue_max` caps queued follow-up work behind the active pending session; explicit due rows from `learnbuddy_schedule_exercise` wait behind an existing pending task, then dispatch even if the automatic daily limit is already used. It is also the dispatcher that makes scheduled rows child-visible by opening, delivering, and marking them dispatched.
 - Installable timer: `scripts/install-dispatch-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy dispatch-plan` repeatedly.
 
 ### Schedule one concrete exercise for later

@@ -19,7 +19,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.18"
+PLUGIN_VERSION = "0.1.0-alpha.19"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -332,12 +332,14 @@ def _runtime(args: dict[str, Any] | None = None) -> LearnBuddyRuntime:
     config = _config(args)
     data_dir = Path(args.get("data_dir") or config.resolved_storage_dir())
     max_attempts = int(args.get("max_attempts") or config.max_attempts)
+    queue_max = int(args.get("queue_max") or config.queue_max)
     child_id = str(args.get("child_id") or config.child_id)
     child_name = str(args.get("child_name") or config.child_name)
     agent_name = str(args.get("agent_name") or config.agent_name)
     return LearnBuddyRuntime(
         data_dir,
         max_attempts=max_attempts,
+        queue_max=queue_max,
         child_id=child_id,
         child_name=child_name,
         agent_name=agent_name,
@@ -512,6 +514,18 @@ def learnbuddy_create_and_send_exercise(args: dict[str, Any] | None = None) -> s
         return _json({
             "status": "missing_expected_answer",
             "error": "learnbuddy_create_and_send_exercise requires answer or expected_answers before sending a child-facing exercise.",
+        })
+    runtime = _runtime(args)
+    state = runtime.status()
+    queue_value = state.get("queue")
+    queue = queue_value if isinstance(queue_value, list) else []
+    if isinstance(state.get("pending"), dict) and len(queue) >= runtime.queue_max:
+        return _json({
+            "status": "queue_full",
+            "error": "LearnBuddy already has one open exercise and the follow-up queue is full; no new exercise was stored or delivered.",
+            "pending": state.get("pending"),
+            "queue_count": len(queue),
+            "queue_max": runtime.queue_max,
         })
     queued = json.loads(learnbuddy_queue_exercise(args))
     exercise = queued["exercise"]

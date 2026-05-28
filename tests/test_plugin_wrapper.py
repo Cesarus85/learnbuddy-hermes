@@ -248,6 +248,49 @@ delivery:
     }
 
 
+def test_create_and_send_refuses_when_followup_queue_is_full_without_storing_exercise(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "queue-full-create-send-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+safety:
+  queue_max: 1
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+
+    first = json.loads(plugin.learnbuddy_create_and_send_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "1 + 1?",
+        "answer": "2",
+    }))
+    second = json.loads(plugin.learnbuddy_create_and_send_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "2 + 2?",
+        "answer": "4",
+    }))
+    full = json.loads(plugin.learnbuddy_create_and_send_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "should not persist",
+        "answer": "6",
+    }))
+
+    assert first["status"] == "sent"
+    assert second["opened"]["status"] == "queued"
+    assert full["status"] == "queue_full"
+    assert full["queue_count"] == 1
+    exercises_text = (data_dir / "exercises.jsonl").read_text(encoding="utf-8")
+    assert "should not persist" not in exercises_text
+
+
 def test_dispatch_plan_opens_and_delivers_scheduled_exercise(tmp_path):
     plugin = load_plugin()
     data_dir = tmp_path / "dispatch-plan-data"

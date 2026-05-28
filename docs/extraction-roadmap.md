@@ -61,6 +61,7 @@ agent:
 
 safety:
   max_attempts: 3
+  queue_max: 5
   daily_auto_limit: 1
   allowed_hours:
     from: "07:00"

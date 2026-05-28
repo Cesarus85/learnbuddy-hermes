@@ -17,6 +17,7 @@ class LearnBuddyConfig:
     timezone: str = "Europe/Berlin"
     storage_dir: str | None = None
     max_attempts: int = 3
+    queue_max: int = 5
     daily_auto_limit: int = 1
     allowed_hours_from: str = "07:00"
     allowed_hours_to: str = "21:00"
@@ -70,6 +71,7 @@ class LearnBuddyConfig:
             timezone=str(family.get("timezone") or safety.get("timezone") or data.get("timezone") or cls.timezone),
             storage_dir=storage_dir,
             max_attempts=int(safety.get("max_attempts") or child.get("max_attempts") or data.get("max_attempts") or cls.max_attempts),
+            queue_max=max(0, min(20, int(safety.get("queue_max") or data.get("queue_max") or cls.queue_max))),
             daily_auto_limit=int(safety.get("daily_auto_limit") or data.get("daily_auto_limit") or cls.daily_auto_limit),
             allowed_hours_from=str(allowed_hours.get("from") or safety.get("allowed_hours_from") or cls.allowed_hours_from),
             allowed_hours_to=str(allowed_hours.get("to") or safety.get("allowed_hours_to") or cls.allowed_hours_to),

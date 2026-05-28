@@ -145,6 +145,7 @@ agent:
   name: Lumi
 safety:
   max_attempts: 3
+  queue_max: 5
   daily_auto_limit: 1
   allowed_hours:
     from: "07:00"
@@ -160,7 +161,7 @@ delivery:
       target_env: LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
 ```
 
-`learnbuddy dispatch-plan` opens and delivers one due scheduled or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). `daily_auto_limit` gates automatic selection; explicit parent-scheduled due rows wait behind pending work and then dispatch even if the automatic daily limit is already used. `learnbuddy next --deliver` uses the child adapter for manual parent-open flows and persists child-delivery metadata on the pending session. `learnbuddy deliver-pending` repairs/resends the currently pending prompt when a parent reports that the learner never saw it. `learnbuddy report --notify` uses the parent adapter. `learnbuddy watch-telegram-answers` evaluates one Kids-bot answer, sends feedback, repairs any undelivered pending prompt when there is no answer, and if a queued exercise is promoted after a correct/exhausted answer, delivers that next prompt to the child automatically. Child control messages are intentionally narrow: `Nochmal`/`nochmal senden` resends the current pending prompt without counting as an answer, `Hilfe`/`Ich weiß nicht` creates a bounded parent-help request, and `Noch eine` is policy-bounded — with a pending task it tells the learner to finish first; without a pending task it may open and deliver one automatic exercise only when `allowed_hours` and `daily_auto_limit` allow it. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
+`learnbuddy dispatch-plan` opens and delivers one due scheduled or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). `daily_auto_limit` gates automatic selection; `queue_max` caps follow-up tasks while one exercise is open; explicit parent-scheduled due rows wait behind pending work and then dispatch even if the automatic daily limit is already used. `learnbuddy next --deliver` uses the child adapter for manual parent-open flows and persists child-delivery metadata on the pending session. `learnbuddy deliver-pending` repairs/resends the currently pending prompt when a parent reports that the learner never saw it. `learnbuddy report --notify` uses the parent adapter. `learnbuddy watch-telegram-answers` evaluates one Kids-bot answer, sends feedback, repairs any undelivered pending prompt when there is no answer, and if a queued exercise is promoted after a correct/exhausted answer, delivers that next prompt to the child automatically. Child control messages are intentionally narrow: `Nochmal`/`nochmal senden` resends the current pending prompt without counting as an answer, `Hilfe`/`Ich weiß nicht` creates a bounded parent-help request, and `Noch eine` is policy-bounded — with a pending task it tells the learner to finish first; without a pending task it may open and deliver one automatic exercise only when `allowed_hours` and `daily_auto_limit` allow it. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
 
 For Hermes gateway/plugin use, set profile env defaults so the model can call LearnBuddy tools without repeating local paths:
 
@@ -181,6 +182,7 @@ For direct child chat, create the separate profile with `scripts/setup-child-pro
 - [`docs/setup-child-profile.md`](docs/setup-child-profile.md)
 - [`docs/quickstart-vps.md`](docs/quickstart-vps.md)
 - [`docs/demo-flow.md`](docs/demo-flow.md)
+- [`docs/production-migration-checklist.md`](docs/production-migration-checklist.md)
 - [`docs/child-safety-model.md`](docs/child-safety-model.md)
 - [`PRIVACY.md`](PRIVACY.md)
 - [`SECURITY.md`](SECURITY.md)

@@ -48,7 +48,7 @@ def create_setup(
     payload: dict[str, Any] = {
         "child": {"id": child_id, "display_name": child_name},
         "agent": {"name": agent_name},
-        "safety": {"max_attempts": 3, "daily_auto_limit": 1, "allowed_hours": {"from": "07:00", "to": "21:00"}},
+        "safety": {"max_attempts": 3, "queue_max": 5, "daily_auto_limit": 1, "allowed_hours": {"from": "07:00", "to": "21:00"}},
         "storage": {"data_dir": str(storage)},
         "delivery": {"mode": delivery_mode},
     }

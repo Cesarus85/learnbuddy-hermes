@@ -374,6 +374,8 @@ def test_install_guide_covers_hermes_and_learnbuddy_setup() -> None:
         "learnbuddy deliver-pending",
         "learnbuddy report --notify",
         "learnbuddy weekly-status --notify",
+        "safety.queue_max",
+        "docs/production-migration-checklist.md",
         "delivery.mode: dry_run",
         "LEARNBUDDY_CHILD_TELEGRAM_BOT_TOKEN",
         "hermes plugins",
@@ -405,6 +407,25 @@ def test_demo_flow_documents_full_public_smoke_path() -> None:
         "delivery.mode: dry_run",
         "examples/exercises/de/grade-5-mixed.jsonl",
     ]
+    for snippet in required_snippets:
+        assert snippet in text
+
+
+def test_production_migration_checklist_is_public_safe_and_covers_cutover_gates() -> None:
+    text = read_repo_file("docs/production-migration-checklist.md")
+    required_snippets = [
+        "Read-only inventory",
+        "delivery.mode: dry_run",
+        "safety.queue_max",
+        "queue_full",
+        "learnbuddy backup",
+        "learnbuddy doctor",
+        "learnbuddy weekly-status",
+        "parent-only `learnbuddy_learning`",
+        "child-only `learnbuddy_child`",
+        "production_migration_smoke=ok",
+    ]
+    assert_public_safe_text(text)
     for snippet in required_snippets:
         assert snippet in text
 

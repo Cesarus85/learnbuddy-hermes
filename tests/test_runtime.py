@@ -23,6 +23,7 @@ agent:
   name: BuddyBot
 safety:
   max_attempts: 4
+  queue_max: 2
   daily_auto_limit: 2
   allowed_hours:
     from: "08:30"
@@ -39,6 +40,7 @@ storage:
     assert config.child_name == "Alex"
     assert config.agent_name == "BuddyBot"
     assert config.max_attempts == 4
+    assert config.queue_max == 2
     assert config.daily_auto_limit == 2
     assert config.allowed_hours_from == "08:30"
     assert config.allowed_hours_to == "19:45"
@@ -54,8 +56,11 @@ def test_public_example_configs_expose_child_and_agent_identity():
     assert telegram.child_name == "Emma"
     assert telegram.agent_name == "Lumi"
     assert telegram.max_attempts == 3
+    assert telegram.queue_max == 5
+    assert telegram.daily_auto_limit == 1
     assert vps.child_id == "emma"
     assert vps.agent_name == "Lumi"
+    assert vps.queue_max == 5
 
 
 def test_config_supports_legacy_children_list_shape(tmp_path):
@@ -140,6 +145,27 @@ def test_runtime_opens_exercise_queues_second_and_promotes_after_exhaustion(tmp_
     assert correct["correct"] is True
     assert correct["promoted_session"] is None
     assert runtime.status()["pending"] is None
+
+
+def test_runtime_limits_followup_queue_without_losing_pending(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", queue_max=1)
+    first = runtime.add_exercise({"subject": "math", "prompt": "1 + 1?", "answer": "2"})
+    second = runtime.add_exercise({"subject": "math", "prompt": "2 + 2?", "answer": "4"})
+    third = runtime.add_exercise({"subject": "math", "prompt": "3 + 3?", "answer": "6"})
+
+    opened = runtime.open_exercise(first["id"])
+    queued = runtime.open_exercise(second["id"])
+    full = runtime.open_exercise(third["id"])
+
+    assert opened["status"] == "opened"
+    assert queued["status"] == "queued"
+    assert full["status"] == "queue_full"
+    assert full["queue_count"] == 1
+    assert full["queue_max"] == 1
+    state = runtime.status()
+    assert state["pending"]["exercise_id"] == first["id"]
+    assert [item["exercise_id"] for item in state["queue"]] == [second["id"]]
+    assert all(row["exercise_id"] != third["id"] for row in runtime.sessions())
 
 
 def test_runtime_tracks_pending_child_delivery_status(tmp_path):

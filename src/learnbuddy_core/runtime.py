@@ -187,6 +187,7 @@ class LearnBuddyRuntime:
         data_dir: str | Path,
         *,
         max_attempts: int = 3,
+        queue_max: int = 5,
         child_id: str = "learner",
         child_name: str = "Learner",
         agent_name: str = "LearnBuddy",
@@ -195,6 +196,7 @@ class LearnBuddyRuntime:
             raise ValueError("max_attempts must be >= 1")
         self.paths = RuntimePaths(Path(data_dir).expanduser())
         self.max_attempts = max_attempts
+        self.queue_max = max(0, min(20, int(queue_max)))
         self.child_id = child_id
         self.child_name = child_name
         self.agent_name = agent_name
@@ -334,9 +336,18 @@ class LearnBuddyRuntime:
             scheduled_id=scheduled_id,
         )
         if state.get("pending"):
+            queue = state.setdefault("queue", [])
+            if len(queue) >= self.queue_max:
+                return {
+                    "status": "queue_full",
+                    "exercise": exercise,
+                    "pending": state.get("pending"),
+                    "queue_count": len(queue),
+                    "queue_max": self.queue_max,
+                }
             queue_item = dict(session)
             queue_item["queued_at"] = _now()
-            state.setdefault("queue", []).append(queue_item)
+            queue.append(queue_item)
             self._write_state(state)
             return {"status": "queued", "session": queue_item, "exercise": exercise}
         state["pending"] = session

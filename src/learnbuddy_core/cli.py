@@ -30,6 +30,7 @@ def _runtime_from_args(args: argparse.Namespace, config: LearnBuddyConfig | None
     return LearnBuddyRuntime(
         data_dir,
         max_attempts=config.max_attempts,
+        queue_max=config.queue_max,
         child_id=config.child_id,
         child_name=config.child_name,
         agent_name=config.agent_name,

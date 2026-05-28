@@ -82,6 +82,8 @@ delivery.mode: dry_run
 
 `learnbuddy.yaml`, `data/`, restore folders, and backup zips are ignored by git by default because they become private local runtime artifacts.
 
+The generated `safety.queue_max` limits follow-up tasks while one exercise is open. This mirrors the production-safety rule that parent/chat automation must not pile up unlimited queued tasks.
+
 ## 5. Run the full dry-run smoke test
 
 This step covers `learnbuddy schedule-exercise`, `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path.
@@ -108,7 +110,7 @@ Expected first-run behavior:
 - parent notification result is `dry_run`.
 - restore succeeds into a fresh directory.
 
-A fuller walkthrough lives in [`docs/demo-flow.md`](docs/demo-flow.md).
+A fuller walkthrough lives in [`docs/demo-flow.md`](docs/demo-flow.md). For existing private deployments, use [`docs/production-migration-checklist.md`](docs/production-migration-checklist.md) before touching production.
 
 ## 6. Optional: use the synthetic exercise fixture
 
@@ -281,7 +283,7 @@ learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnb
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 
-`doctor` reports missing variable names, not secret values, and flags unwritable runtime files such as a root-owned `scheduled_exercises.jsonl` before timers fail mid-dispatch. `schedule-exercise` records a concrete timed task; it does not send by itself. `dispatch-plan` is safe to run from cron/systemd: it opens and delivers at most one due scheduled or automatic exercise when allowed-hours policy permits it and no exercise is already pending. `daily_auto_limit` applies to automatic plan selection, not to explicit parent-scheduled due rows. Use `scripts/install-dispatch-timer.sh` for the recurring dispatcher path. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background. If a pending exercise has no successful child-delivery metadata, the watcher repairs that by sending the current prompt before waiting for another answer; `learnbuddy deliver-pending` gives the same repair path as an explicit operator command.
+`doctor` reports missing variable names, not secret values, and flags unwritable runtime files such as a root-owned `scheduled_exercises.jsonl` before timers fail mid-dispatch. `queue_max` caps follow-up tasks behind an active pending exercise, returning `queue_full` instead of silently piling up unlimited work. `schedule-exercise` records a concrete timed task; it does not send by itself. `dispatch-plan` is safe to run from cron/systemd: it opens and delivers at most one due scheduled or automatic exercise when allowed-hours policy permits it and no exercise is already pending. `daily_auto_limit` applies to automatic plan selection, not to explicit parent-scheduled due rows. Use `scripts/install-dispatch-timer.sh` for the recurring dispatcher path. `watch-telegram-answers` is intentionally one-shot: run it from cron/systemd every minute if you want child replies in the Kids bot to be evaluated automatically, with feedback sent back to the child and a parent result notification. When a correct/exhausted answer promotes a queued exercise, the watcher also delivers the promoted prompt to the child, so queued parent tasks do not sit silently in the background. If a pending exercise has no successful child-delivery metadata, the watcher repairs that by sending the current prompt before waiting for another answer; `learnbuddy deliver-pending` gives the same repair path as an explicit operator command.
 
 ## 9. VPS notes
 
