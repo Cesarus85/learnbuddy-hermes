@@ -167,6 +167,8 @@ hermes --profile learnbuddy-child tools list
 
 Confirm the child profile exposes the selected capability level and does not expose terminal/file/code execution/generic messaging tools.
 
+The setup script also writes `known_plugin_toolsets` so Hermes does not auto-enable newly discovered plugin toolsets, and it disables the parent/admin `learnbuddy_learning` toolset inside the child profile as a second safety belt.
+
 Install the dedicated service:
 
 ```bash
@@ -191,11 +193,20 @@ TELEGRAM_FREE_RESPONSE_CHATS
 It also refuses to start if the child bot token matches the default profile Telegram bot token. That check is intentionally blunt; reusing the parent/default bot for a child profile is how you create a haunted house with push notifications.
 
 Once the dedicated child BotFather token and allowlists are set:
-
 ```bash
 scripts/install-child-gateway-service.sh --profile learnbuddy-child --enable --start
 systemctl --user status hermes-gateway-learnbuddy-child.service
 ```
+
+Run the extended LearnBuddy doctor before treating onboarding as complete:
+
+```bash
+learnbuddy doctor --config ./learnbuddy.yaml --parent-profile learnbuddy-parent --child-profile learnbuddy-child \
+  --child-gateway-service hermes-gateway-learnbuddy-child \
+  --dispatch-timer-profile learnbuddy-parent
+```
+
+The expected JSON/text checks are `parent_profile`, `child_profile`, `child_gateway_service`, and `dispatch_timer`. They verify plugin presence, `known_plugin_toolsets`, child-profile lockout of parent/admin tools, profile env key presence (`LEARNBUDDY_CONFIG_PATH`, `TELEGRAM_BOT_TOKEN`, allowlists), and systemd units such as the dispatch timer with `Persistent=true`. The doctor prints keys and paths only, never Telegram values.
 
 If your Hermes install creates a different per-profile service name, document it in your private runbook and keep the parent and child gateways separate.
 

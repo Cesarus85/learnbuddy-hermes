@@ -121,6 +121,7 @@ Phase 3 doctor/CLI slice adds:
 - `learnbuddy_core.doctor.build_doctor_report(...)`
 - text and JSON `learnbuddy doctor` output
 - storage and delivery environment checks that report env-var names only, not values
+- Hermes onboarding/gateway doctor hardening: optional `--parent-profile`, `--child-profile`, `--child-gateway-service`, and `--dispatch-timer-profile` checks report `parent_profile`, `child_profile`, `child_gateway_service`, and `dispatch_timer` status; they validate plugin install, `known_plugin_toolsets`, `LEARNBUDDY_CONFIG_PATH`, `TELEGRAM_BOT_TOKEN` key presence, child-profile lockout of parent/admin toolsets, `learnbuddy dispatch-plan --config ...`, and `Persistent=true` timer units without printing secret values
 - JSON runtime commands: `learnbuddy queue`, `seed`, `next`, `dispatch-plan`, `deliver-pending`, `answer`, `status`, `help-request`, `watch-telegram-answers`, and `report`
 - curriculum/content parity seed: `learnbuddy seed --pack de/bavaria-realschule-grade-5` imports 80 public-safe synthetic Bavaria/Realschule grade-5 exercises across Mathe, Deutsch, and Englisch, without copying private production data
 - scheduled plan dispatcher parity: `dispatch-plan` respects `daily_auto_limit`, `allowed_hours`, and existing pending work before opening/delivering one automatic exercise

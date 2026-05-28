@@ -191,6 +191,16 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
+After installing the parent/child profiles and the dispatcher timer, run the onboarding doctor as the boring final gate:
+
+```bash
+learnbuddy doctor --config ./learnbuddy.yaml --parent-profile learnbuddy-parent --child-profile learnbuddy-child \
+  --child-gateway-service hermes-gateway-learnbuddy-child \
+  --dispatch-timer-profile learnbuddy-parent
+```
+
+The extended doctor adds machine-readable checks named `parent_profile`, `child_profile`, `child_gateway_service`, and `dispatch_timer`. It verifies the LearnBuddy plugin is installed in each profile, Telegram routing uses `platform_toolsets` plus `known_plugin_toolsets`, the child profile does not expose `learnbuddy_learning`, the child gateway unit points at `hermes --profile learnbuddy-child gateway run`, and the dispatch timer service runs `learnbuddy dispatch-plan --config ...` with a timer containing `Persistent=true`. It reports env key names such as `LEARNBUDDY_CONFIG_PATH` and `TELEGRAM_BOT_TOKEN`, never values.
+
 `LEARNBUDDY_ENV_FILE` is optional and should be mode `600`; it can hold the Telegram variables named by the YAML. Existing process environment values win over the file. The plugin also exposes `learnbuddy_create_and_send_exercise` as a one-call parent orchestration helper: create exercise → open it → deliver to the child adapter → persist delivery metadata. `learnbuddy_schedule_exercise` creates a concrete one-shot task for later delivery; it requires `due_at` plus `answer_or_expected_answers`, stores the task in scheduled runtime data, and relies on `learnbuddy_dispatch_plan` to make it child-visible when due. `learnbuddy_dispatch_plan` is scheduler-safe for one due automatic or scheduled exercise, respecting allowed hours and current pending state. `daily_auto_limit` gates automatic selection; explicit parent-scheduled due exercises wait behind pending work, then dispatch even if the automatic daily limit is already used. `learnbuddy_daily_parent_status` sends at most one local-day parent status, respects `pause_today`, skips duplicate sends, and skips empty days unless `include_empty=true`; `learnbuddy_parent_automation_control` handles `heute pausieren`/resume/status commands. `learnbuddy_deliver_pending_exercise` repairs/resends the current pending prompt when the learner did not receive it. It also exposes `learnbuddy_parent_help_request` as the public-safe parent-help path: it records a local help request and only notifies parents with `notify=true`. Hermes receives guided JSON schemas for the LearnBuddy tools, which keeps parent-chat commands bounded: create/send needs a concrete prompt, scheduled dispatch is policy-bounded, repair/resend is explicit, help/report/status pushes require explicit notification flags, and status reads do not send messages.
 
 The parent/main profile can use the broad `learnbuddy_learning` toolset for parent/admin commands. A child-facing profile should be created separately as a full child-facing Hermes Agent with the `learnbuddy_child` baseline plus explicit capability levels (`locked`, `guided`, `curious`, `teen-supervised`). Do not clone a parent/admin profile wholesale; upgrades need parent approval, audit, and a downgrade path.

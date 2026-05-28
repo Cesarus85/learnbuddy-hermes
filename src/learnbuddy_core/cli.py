@@ -106,7 +106,15 @@ def _deliver_pending_child_prompt(config: LearnBuddyConfig, runtime: LearnBuddyR
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
-    report = build_doctor_report(config)
+    report = build_doctor_report(
+        config,
+        hermes_home=args.hermes_home,
+        parent_profile=args.parent_profile,
+        child_profile=args.child_profile,
+        systemd_user_dir=args.systemd_user_dir,
+        child_gateway_service=args.child_gateway_service,
+        dispatch_timer_profile=args.dispatch_timer_profile,
+    )
     if args.format == "json":
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
@@ -466,6 +474,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check local LearnBuddy prerequisites")
     doctor.add_argument("--config", help="path to learnbuddy.yaml")
     doctor.add_argument("--format", choices=["text", "json"], default="text", help="doctor output format")
+    doctor.add_argument("--hermes-home", help="Hermes home to inspect for profile onboarding checks")
+    doctor.add_argument("--parent-profile", help="parent/admin Hermes profile to verify for LearnBuddy Telegram routing")
+    doctor.add_argument("--child-profile", help="child Hermes profile to verify for locked-down LearnBuddy routing")
+    doctor.add_argument("--systemd-user-dir", help="systemd user unit directory to inspect; defaults to ~/.config/systemd/user")
+    doctor.add_argument("--child-gateway-service", help="child gateway systemd user service name, with or without .service")
+    doctor.add_argument("--dispatch-timer-profile", help="profile label used by scripts/install-dispatch-timer.sh")
     doctor.set_defaults(func=cmd_doctor)
     setup = sub.add_parser("setup", help="create a public-safe starter config and storage directory")
     setup.add_argument("--config", default="learnbuddy.yaml", help="path to write learnbuddy.yaml")

@@ -121,6 +121,117 @@ def test_doctor_accepts_creatable_storage_path(capsys, tmp_path, monkeypatch):
     assert "creatable=True" in out
 
 
+def _write_profile(home, name, *, child=False, include_model=True):
+    profile_home = home / "profiles" / name
+    profile_home.mkdir(parents=True)
+    (profile_home / "SOUL.md").write_text("LearnBuddy child profile" if child else "LearnBuddy parent profile", encoding="utf-8")
+    plugin_dir = profile_home / "plugins" / "learnbuddy-learning"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.yaml").write_text("name: learnbuddy-learning\n", encoding="utf-8")
+    if child:
+        telegram_toolsets = '["learnbuddy_child", "tts", "vision"]'
+        known_toolsets = '["learnbuddy_child", "learnbuddy_learning"]'
+        disabled_toolsets = '["terminal", "file", "code_execution", "homeassistant", "messaging", "learnbuddy_learning"]'
+    else:
+        telegram_toolsets = '["learnbuddy_learning"]'
+        known_toolsets = '["learnbuddy_learning", "learnbuddy_child"]'
+        disabled_toolsets = '["learnbuddy_child"]'
+    model_block = "model:\n  provider: test-provider\n  default: test-model\n" if include_model else ""
+    (profile_home / "config.yaml").write_text(
+        f"""
+platform_toolsets:
+  telegram: {telegram_toolsets}
+known_plugin_toolsets:
+  telegram: {known_toolsets}
+agent:
+  disabled_toolsets: {disabled_toolsets}
+{model_block}""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (profile_home / ".env").write_text(
+        "LEARNBUDDY_CONFIG_PATH=/tmp/learnbuddy.yaml\n"
+        "LEARNBUDDY_ENV_FILE=/tmp/learnbuddy.env\n"
+        "TELEGRAM_BOT_TOKEN=secret-child-token\n"
+        "TELEGRAM_ALLOWED_CHATS=12345\n"
+        "TELEGRAM_HOME_CHANNEL=12345\n"
+        "TELEGRAM_FREE_RESPONSE_CHATS=12345\n",
+        encoding="utf-8",
+    )
+    return profile_home
+
+
+def test_doctor_can_verify_hermes_onboarding_profiles_gateway_and_timer(capsys, tmp_path):
+    hermes_home = tmp_path / "hermes"
+    _write_profile(hermes_home, "learnbuddy-parent")
+    _write_profile(hermes_home, "learnbuddy-child", child=True)
+    unit_dir = tmp_path / "systemd-user"
+    unit_dir.mkdir()
+    (unit_dir / "hermes-gateway-learnbuddy-child.service").write_text(
+        "ExecStart=/usr/bin/hermes --profile learnbuddy-child gateway run\n",
+        encoding="utf-8",
+    )
+    (unit_dir / "learnbuddy-dispatch-learnbuddy-parent.service").write_text(
+        "ExecStart=/venv/bin/python -m learnbuddy_core.cli dispatch-plan --config /tmp/learnbuddy.yaml\n",
+        encoding="utf-8",
+    )
+    (unit_dir / "learnbuddy-dispatch-learnbuddy-parent.timer").write_text(
+        "[Timer]\nOnUnitActiveSec=5min\nPersistent=true\n",
+        encoding="utf-8",
+    )
+
+    assert main([
+        "doctor",
+        "--format",
+        "json",
+        "--hermes-home",
+        str(hermes_home),
+        "--parent-profile",
+        "learnbuddy-parent",
+        "--child-profile",
+        "learnbuddy-child",
+        "--systemd-user-dir",
+        str(unit_dir),
+        "--child-gateway-service",
+        "hermes-gateway-learnbuddy-child",
+        "--dispatch-timer-profile",
+        "learnbuddy-parent",
+    ]) == 0
+    report = json.loads(capsys.readouterr().out)
+
+    assert report["overall"] == "ok"
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["parent_profile"]["status"] == "ok"
+    assert checks["child_profile"]["status"] == "ok"
+    assert checks["child_gateway_service"]["status"] == "ok"
+    assert checks["dispatch_timer"]["status"] == "ok"
+    serialized = json.dumps(report, ensure_ascii=False)
+    assert "secret-child-token" not in serialized
+    assert "12345" not in serialized
+
+
+def test_doctor_reports_unsafe_child_profile_tool_exposure(capsys, tmp_path):
+    hermes_home = tmp_path / "hermes"
+    _write_profile(hermes_home, "unsafe-child", child=False, include_model=False)
+
+    assert main([
+        "doctor",
+        "--format",
+        "json",
+        "--hermes-home",
+        str(hermes_home),
+        "--child-profile",
+        "unsafe-child",
+    ]) == 1
+    report = json.loads(capsys.readouterr().out)
+    child_check = next(check for check in report["checks"] if check["name"] == "child_profile")
+
+    assert child_check["status"] == "error"
+    assert "missing_telegram_toolset:learnbuddy_child" in child_check["issues"]
+    assert "forbidden_telegram_toolset:learnbuddy_learning" in child_check["issues"]
+    assert "missing_model" in child_check["issues"]
+
+
 def test_cli_exercise_lifecycle_uses_configured_storage(capsys, tmp_path):
     data_dir = tmp_path / "cli-data"
     config_path = tmp_path / "learnbuddy.yaml"

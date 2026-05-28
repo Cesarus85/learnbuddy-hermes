@@ -186,6 +186,16 @@ The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent f
 
 For direct child chat, create the separate profile with `scripts/setup-child-profile.sh`, then install the dedicated gateway unit with `scripts/install-child-gateway-service.sh --profile learnbuddy-child`. The installer refuses to start/enable unless the child profile has a dedicated `TELEGRAM_BOT_TOKEN`, allowlists, home channel, and free-response chat config, and it rejects accidental reuse of the default profile's Telegram bot token.
 
+Before using real Telegram traffic, run the extended onboarding doctor:
+
+```bash
+learnbuddy doctor --config ./learnbuddy.yaml --parent-profile learnbuddy-parent --child-profile learnbuddy-child \
+  --child-gateway-service hermes-gateway-learnbuddy-child \
+  --dispatch-timer-profile learnbuddy-parent
+```
+
+It reports `parent_profile`, `child_profile`, `child_gateway_service`, and `dispatch_timer` checks, including `known_plugin_toolsets`, `LEARNBUDDY_CONFIG_PATH`, `TELEGRAM_BOT_TOKEN` key presence, and `Persistent=true` timer units, without printing secret values.
+
 ## Docs
 
 - [`docs/quickstart-telegram.md`](docs/quickstart-telegram.md)

@@ -117,12 +117,13 @@ def test_public_docs_include_telegram_parent_command_contracts() -> None:
 def test_parent_profile_assets_support_live_command_contract_routing() -> None:
     soul = read_repo_file("templates/parent-profile/SOUL.md")
     script = read_repo_file("scripts/setup-parent-profile.sh")
+    child_script = read_repo_file("scripts/setup-child-profile.sh")
     daily_timer = read_repo_file("scripts/install-daily-status-timer.sh")
     weekly_timer = read_repo_file("scripts/install-weekly-status-timer.sh")
     dispatch_timer = read_repo_file("scripts/install-dispatch-timer.sh")
     install = read_repo_file("INSTALL.md")
 
-    for text in (soul, script, daily_timer, weekly_timer, dispatch_timer, install):
+    for text in (soul, script, child_script, daily_timer, weekly_timer, dispatch_timer, install):
         assert_public_safe_text(text)
 
     required_soul_snippets = [
@@ -196,6 +197,35 @@ def test_parent_profile_assets_support_live_command_contract_routing() -> None:
     for snippet in required_dispatch_timer_snippets:
         assert snippet in dispatch_timer
     assert "scripts/install-dispatch-timer.sh" in install
+    assert "learnbuddy_learning" in child_script
+
+
+def test_docs_document_onboarding_doctor_hardening() -> None:
+    install = read_repo_file("INSTALL.md")
+    telegram = read_repo_file("docs/quickstart-telegram.md")
+    child_profile = read_repo_file("docs/setup-child-profile.md")
+    roadmap = read_repo_file("docs/extraction-roadmap.md")
+    readme = read_repo_file("README.md")
+
+    for text in (install, telegram, child_profile, roadmap, readme):
+        assert_public_safe_text(text)
+
+    required_snippets = [
+        "learnbuddy doctor --config ./learnbuddy.yaml --parent-profile learnbuddy-parent --child-profile learnbuddy-child",
+        "--child-gateway-service hermes-gateway-learnbuddy-child",
+        "--dispatch-timer-profile learnbuddy-parent",
+        "parent_profile",
+        "child_profile",
+        "child_gateway_service",
+        "dispatch_timer",
+        "known_plugin_toolsets",
+        "LEARNBUDDY_CONFIG_PATH",
+        "TELEGRAM_BOT_TOKEN",
+        "Persistent=true",
+    ]
+    combined = "\n".join([install, telegram, child_profile, roadmap, readme])
+    for snippet in required_snippets:
+        assert snippet in combined
 
 
 def test_telegram_quickstart_documents_child_control_messages() -> None:

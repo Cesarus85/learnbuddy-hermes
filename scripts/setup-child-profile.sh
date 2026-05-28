@@ -71,19 +71,19 @@ if [[ -z "$PYTHON_BIN" ]]; then
   fi
 fi
 
-BASE_FORBIDDEN_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen"]'
+BASE_FORBIDDEN_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","learnbuddy_learning"]'
 case "$CAPABILITY_LEVEL" in
   locked)
     TELEGRAM_TOOLSETS='["learnbuddy_child"]'
-    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","tts","vision","search","skills","delegation","cronjob"]'
+    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","tts","vision","search","skills","delegation","cronjob","learnbuddy_learning"]'
     ;;
   guided)
     TELEGRAM_TOOLSETS='["learnbuddy_child","tts","vision"]'
-    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","search","skills","delegation","cronjob"]'
+    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","search","skills","delegation","cronjob","learnbuddy_learning"]'
     ;;
   curious)
     TELEGRAM_TOOLSETS='["learnbuddy_child","tts","vision","search"]'
-    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","skills","delegation","cronjob"]'
+    DISABLED_TOOLSETS='["terminal","file","code_execution","web","browser","computer_use","messaging","homeassistant","kanban","memory","todo","session_search","image_gen","skills","delegation","cronjob","learnbuddy_learning"]'
     ;;
   teen-supervised)
     TELEGRAM_TOOLSETS='["learnbuddy_child","tts","vision","search","skills","delegation","cronjob"]'
