@@ -758,6 +758,14 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
         "--due-at", "2026-05-28T10:30:00+02:00",
     ]) == 0
     capsys.readouterr()
+    assert main([
+        "plan", "create",
+        "--data-dir", str(data_dir),
+        "--title", "Mathe Woche",
+        "--subject", "math",
+        "--daily-goal", "1",
+    ]) == 0
+    capsys.readouterr()
 
     assert main(["backup", "--data-dir", str(data_dir), "--output", str(archive_path)]) == 0
     backup = json.loads(capsys.readouterr().out)
@@ -771,6 +779,8 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
         "state.json",
         "help_requests.jsonl",
         "scheduled_exercises.jsonl",
+        "plans.jsonl",
+        "plan-state.json",
     }
 
     assert main(["restore", "--archive", str(archive_path), "--data-dir", str(restore_dir)]) == 0
@@ -780,6 +790,69 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
     assert sorted(restore["files"]) == sorted(backup["files"])
     assert (restore_dir / "answers.jsonl").read_text(encoding="utf-8") == (data_dir / "answers.jsonl").read_text(encoding="utf-8")
     assert (restore_dir / "scheduled_exercises.jsonl").read_text(encoding="utf-8") == (data_dir / "scheduled_exercises.jsonl").read_text(encoding="utf-8")
+    assert (restore_dir / "plans.jsonl").read_text(encoding="utf-8") == (data_dir / "plans.jsonl").read_text(encoding="utf-8")
+    assert (restore_dir / "plan-state.json").read_text(encoding="utf-8") == (data_dir / "plan-state.json").read_text(encoding="utf-8")
+
+
+def test_cli_learning_plan_create_status_control_and_dispatch(capsys, tmp_path):
+    data_dir = tmp_path / "learnbuddy-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    assert main(["queue", "--config", str(config_path), "--subject", "math", "--prompt", "1 + 1?", "--answer", "2"]) == 0
+    math = json.loads(capsys.readouterr().out)["exercise"]
+    assert main(["queue", "--config", str(config_path), "--subject", "english", "--prompt", "Translate: Hund", "--answer", "dog"]) == 0
+    english = json.loads(capsys.readouterr().out)["exercise"]
+
+    assert main([
+        "plan",
+        "create",
+        "--config", str(config_path),
+        "--title", "Englisch Woche",
+        "--subject", "english",
+        "--focus", "Wortschatz",
+        "--daily-goal", "1",
+    ]) == 0
+    created = json.loads(capsys.readouterr().out)
+    assert created["status"] == "active"
+    assert created["plan"]["title"] == "Englisch Woche"
+    assert created["plan"]["subjects"] == ["english"]
+
+    assert main(["plan", "status", "--config", str(config_path)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["active_plan"]["id"] == created["plan"]["id"]
+
+    assert main(["dispatch-plan", "--config", str(config_path), "--now", "2026-05-28T10:00:00+02:00"]) == 0
+    dispatched = json.loads(capsys.readouterr().out)
+    assert dispatched["status"] == "opened"
+    assert dispatched["plan"]["id"] == created["plan"]["id"]
+    assert dispatched["exercise"]["id"] == english["id"]
+    assert dispatched["exercise"]["id"] != math["id"]
+    assert dispatched["session"]["source"] == "learning_plan"
+    assert dispatched["session"]["plan_id"] == created["plan"]["id"]
+    assert dispatched["delivery_status"] == "sent"
+    assert dispatched["delivery"]["status"] == "dry_run"
+
+    assert main(["answer", "--config", str(config_path), "dog"]) == 0
+    capsys.readouterr()
+    assert main(["dispatch-plan", "--config", str(config_path), "--now", "2026-05-28T11:00:00+02:00"]) == 0
+    limit = json.loads(capsys.readouterr().out)
+    assert limit["status"] == "plan_daily_goal_reached"
+
+    assert main(["plan", "pause", "--config", str(config_path), "--reason", "Familientag"]) == 0
+    paused = json.loads(capsys.readouterr().out)
+    assert paused["status"] == "paused"
+    assert paused["reason"] == "Familientag"
+    assert main(["plan", "resume", "--config", str(config_path)]) == 0
+    resumed = json.loads(capsys.readouterr().out)
+    assert resumed["status"] == "active"
 
 
 def test_cli_restore_refuses_to_overwrite_existing_data_without_force(capsys, tmp_path):

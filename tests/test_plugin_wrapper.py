@@ -34,6 +34,59 @@ def test_plugin_tools_use_isolated_data_dir_and_return_json(tmp_path):
     assert (data_dir / "answers.jsonl").exists()
 
 
+def test_plugin_learning_plan_tools_and_dispatch_use_active_plan(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "plugin-plan-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    math = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "math",
+        "prompt": "1 + 1?",
+        "answer": "2",
+    }))["exercise"]
+    english = json.loads(plugin.learnbuddy_queue_exercise({
+        "config_path": str(config_path),
+        "subject": "english",
+        "prompt": "Translate: Hund",
+        "answer": "dog",
+    }))["exercise"]
+
+    created = json.loads(plugin.learnbuddy_create_learning_plan({
+        "config_path": str(config_path),
+        "title": "English focus",
+        "subjects": ["english"],
+        "focus": ["vocabulary"],
+        "daily_goal": 1,
+    }))
+    status = json.loads(plugin.learnbuddy_learning_plan_status({"config_path": str(config_path)}))
+    dispatched = json.loads(plugin.learnbuddy_dispatch_plan({"config_path": str(config_path), "now": "2026-05-28T10:00:00+02:00"}))
+
+    assert created["status"] == "active"
+    assert status["active_plan"]["id"] == created["plan"]["id"]
+    assert dispatched["status"] == "opened"
+    assert dispatched["plan"]["id"] == created["plan"]["id"]
+    assert dispatched["exercise"]["id"] == english["id"]
+    assert dispatched["exercise"]["id"] != math["id"]
+    assert dispatched["delivery"]["status"] == "dry_run"
+    assert dispatched["session"]["source"] == "learning_plan"
+
+    controlled = json.loads(plugin.learnbuddy_control_learning_plan({
+        "config_path": str(config_path),
+        "action": "pause",
+        "reason": "break",
+    }))
+    assert controlled["status"] == "paused"
+
+
 def test_child_submit_answer_notifies_parent_by_default(tmp_path):
     plugin = load_plugin()
     data_dir = tmp_path / "child-answer-notify"
@@ -503,6 +556,9 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_schedule_exercise",
         "learnbuddy_dispatch_plan",
         "learnbuddy_parent_command_contracts",
+        "learnbuddy_create_learning_plan",
+        "learnbuddy_learning_plan_status",
+        "learnbuddy_control_learning_plan",
         "learnbuddy_submit_answer",
         "learnbuddy_learning_status",
         "learnbuddy_parent_answer_status",
@@ -546,6 +602,18 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert ctx.tools["learnbuddy_parent_command_contracts"]["toolset"] == "learnbuddy_learning"
     assert contracts_schema["additionalProperties"] is False
     assert "Parent command contract" in ctx.tools["learnbuddy_parent_command_contracts"]["schema"]["description"]
+
+    plan_create_schema = ctx.tools["learnbuddy_create_learning_plan"]["schema"]["parameters"]
+    plan_status_schema = ctx.tools["learnbuddy_learning_plan_status"]["schema"]["parameters"]
+    plan_control_schema = ctx.tools["learnbuddy_control_learning_plan"]["schema"]["parameters"]
+    assert ctx.tools["learnbuddy_create_learning_plan"]["toolset"] == "learnbuddy_learning"
+    assert ctx.tools["learnbuddy_learning_plan_status"]["toolset"] == "learnbuddy_learning"
+    assert ctx.tools["learnbuddy_control_learning_plan"]["toolset"] == "learnbuddy_learning"
+    assert plan_create_schema["required"] == ["title"]
+    assert plan_create_schema["additionalProperties"] is False
+    assert plan_status_schema["additionalProperties"] is False
+    assert plan_control_schema["required"] == ["action"]
+    assert plan_control_schema["properties"]["action"]["enum"] == ["pause", "resume", "complete", "cancel"]
 
     answer_schema = ctx.tools["learnbuddy_submit_answer"]["schema"]["parameters"]
     assert answer_schema["required"] == ["answer"]
@@ -597,7 +665,7 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
 
     assert contracts["status"] == "ok"
     operations = {item["operation"]: item for item in contracts["contracts"]}
-    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "weekly_status", "automation_control", "resend_pending", "dispatch_plan", "create_and_send_exercise", "schedule_exercise"}
+    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "weekly_status", "automation_control", "resend_pending", "dispatch_plan", "learning_plan", "create_and_send_exercise", "schedule_exercise"}
     assert operations["current_status"]["tool"] == "learnbuddy_learning_status"
     assert "Was ist offen?" in operations["current_status"]["examples"]
     assert operations["answer_status"]["tool"] == "learnbuddy_parent_answer_status"
@@ -616,6 +684,9 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert operations["resend_pending"]["args"] == {"force": True}
     assert operations["dispatch_plan"]["tool"] == "learnbuddy_dispatch_plan"
     assert operations["dispatch_plan"]["policy_bounded"] is True
+    assert operations["learning_plan"]["tool"] == "learnbuddy_create_learning_plan / learnbuddy_learning_plan_status / learnbuddy_control_learning_plan"
+    assert operations["learning_plan"]["policy_bounded"] is True
+    assert "existing exercises" in operations["learning_plan"]["policy"]
     assert operations["create_and_send_exercise"]["tool"] == "learnbuddy_create_and_send_exercise"
     assert operations["create_and_send_exercise"]["requires"] == ["prompt", "answer_or_expected_answers"]
     assert "Frage Learner folgende Aufgaben" in operations["create_and_send_exercise"]["examples"]

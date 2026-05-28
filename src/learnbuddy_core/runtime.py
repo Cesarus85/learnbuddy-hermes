@@ -42,6 +42,14 @@ class RuntimePaths:
         return self.data_dir / "scheduled_exercises.jsonl"
 
     @property
+    def plans(self) -> Path:
+        return self.data_dir / "plans.jsonl"
+
+    @property
+    def plan_state(self) -> Path:
+        return self.data_dir / "plan-state.json"
+
+    @property
     def state(self) -> Path:
         return self.data_dir / "state.json"
 
@@ -227,6 +235,117 @@ class LearnBuddyRuntime:
     def scheduled_exercises(self) -> list[dict[str, Any]]:
         return _read_jsonl(self.paths.scheduled_exercises)
 
+    def learning_plans(self) -> list[dict[str, Any]]:
+        return _read_jsonl(self.paths.plans)
+
+    def create_learning_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """Create a bounded parent-approved learning plan and make it active."""
+        title = str(plan.get("title") or plan.get("name") or "").strip()
+        if not title:
+            raise ValueError("learning plan requires title")
+        subjects = [str(item).strip() for item in plan.get("subjects") or [] if str(item).strip()]
+        focus = [str(item).strip() for item in plan.get("focus") or [] if str(item).strip()]
+        daily_goal = max(1, min(10, int(plan.get("daily_goal") or plan.get("daily_limit") or 1)))
+        row = {
+            "id": f"plan-{uuid.uuid4().hex[:12]}",
+            "title": title,
+            "subjects": subjects,
+            "focus": focus,
+            "daily_goal": daily_goal,
+            "status": "active",
+            "created_by": str(plan.get("created_by") or "parent"),
+            "created_at": _now(),
+            "updated_at": _now(),
+            "child_id": self.child_id,
+            "child_name": self.child_name,
+            "agent_name": self.agent_name,
+        }
+        _append_jsonl(self.paths.plans, row)
+        self._write_plan_state({"active_plan_id": row["id"], "updated_at": row["updated_at"]})
+        return row
+
+    def learning_plan_status(self) -> dict[str, Any]:
+        plans = self.learning_plans()
+        active = self.active_learning_plan()
+        text = "Kein aktiver Lernplan."
+        if active:
+            text = f"Aktiver Lernplan: {active.get('title')} ({active.get('status')})."
+        return {"status": "ok", "active_plan": active, "plans": plans, "plan_state": self._plan_state(), "text": text}
+
+    def active_learning_plan(self) -> dict[str, Any] | None:
+        state = self._plan_state()
+        active_id = str(state.get("active_plan_id") or "")
+        plans = self.learning_plans()
+        if active_id:
+            for row in reversed(plans):
+                if str(row.get("id") or "") == active_id and row.get("status") in {"active", "paused"}:
+                    return row
+        for row in reversed(plans):
+            if row.get("status") in {"active", "paused"}:
+                return row
+        return None
+
+    def set_learning_plan(self, action: str, *, plan_id: str | None = None, reason: str | None = None) -> dict[str, Any]:
+        action = str(action or "").replace("-", "_")
+        if action not in {"pause", "resume", "complete", "cancel"}:
+            raise ValueError(f"unsupported learning plan action: {action}")
+        plans = self.learning_plans()
+        target_id = str(plan_id or (self.active_learning_plan() or {}).get("id") or "")
+        if not target_id:
+            return {"status": "no_active_plan", "plan": None}
+        for index, row in enumerate(plans):
+            if str(row.get("id") or "") != target_id:
+                continue
+            updated = dict(row)
+            updated["status"] = {"pause": "paused", "resume": "active", "complete": "completed", "cancel": "cancelled"}[action]
+            updated["updated_at"] = _now()
+            if reason:
+                updated["reason"] = str(reason)[:500]
+            plans[index] = updated
+            _write_jsonl(self.paths.plans, plans)
+            state = self._plan_state()
+            if updated["status"] in {"active", "paused"}:
+                state["active_plan_id"] = updated["id"]
+            elif state.get("active_plan_id") == updated["id"]:
+                state["active_plan_id"] = None
+            state["updated_at"] = updated["updated_at"]
+            self._write_plan_state(state)
+            return updated
+        return {"status": "unknown_plan", "plan_id": target_id}
+
+    def dispatch_learning_plan(self, *, now: str | None = None, timezone_name: str = "Europe/Berlin") -> dict[str, Any]:
+        """Open one exercise from the active learning plan, respecting plan gates."""
+        state = self._state()
+        if isinstance(state.get("pending"), dict):
+            return {"status": "pending_exists", "pending": state.get("pending")}
+        plan = self.active_learning_plan()
+        if not plan:
+            return {"status": "no_active_plan", "plan": None}
+        if plan.get("status") == "paused":
+            return {"status": "plan_paused", "plan": plan}
+        current = _local_datetime(now, timezone_name)
+        daily_goal = max(1, int(plan.get("daily_goal") or 1))
+        dispatched_today = 0
+        for session in self.sessions():
+            if session.get("source") == "learning_plan" and str(session.get("plan_id") or "") == str(plan.get("id")):
+                if _same_local_date(session.get("timestamp"), current, timezone_name):
+                    dispatched_today += 1
+        if dispatched_today >= daily_goal:
+            return {"status": "plan_daily_goal_reached", "plan": plan, "daily_goal": daily_goal, "sessions_today": dispatched_today}
+        exercise = self._choose_plan_exercise(plan)
+        if not exercise:
+            return {"status": "no_matching_plan_exercise", "plan": plan}
+        result = self.open_exercise(
+            str(exercise.get("id")),
+            mode="auto",
+            requested_by="system",
+            timestamp=current.astimezone(timezone.utc).isoformat(),
+            source="learning_plan",
+            plan_id=str(plan.get("id")),
+        )
+        result["plan"] = plan
+        return result
+
     def sessions(self) -> list[dict[str, Any]]:
         return _read_jsonl(self.paths.sessions)
 
@@ -324,6 +443,7 @@ class LearnBuddyRuntime:
         timestamp: str | None = None,
         source: str | None = None,
         scheduled_id: str | None = None,
+        plan_id: str | None = None,
     ) -> dict[str, Any]:
         exercise = self._choose_exercise(exercise_id=exercise_id, subject=subject)
         state = self._state()
@@ -334,6 +454,7 @@ class LearnBuddyRuntime:
             timestamp=timestamp,
             source=source,
             scheduled_id=scheduled_id,
+            plan_id=plan_id,
         )
         if state.get("pending"):
             queue = state.setdefault("queue", [])
@@ -890,6 +1011,28 @@ class LearnBuddyRuntime:
     def _write_state(self, state: dict[str, Any]) -> None:
         _write_json(self.paths.state, state)
 
+    def _plan_state(self) -> dict[str, Any]:
+        state = _read_json(self.paths.plan_state, {"active_plan_id": None})
+        state.setdefault("active_plan_id", None)
+        return state
+
+    def _write_plan_state(self, state: dict[str, Any]) -> None:
+        _write_json(self.paths.plan_state, state)
+
+    def _choose_plan_exercise(self, plan: dict[str, Any]) -> dict[str, Any] | None:
+        subjects = [str(item) for item in plan.get("subjects") or [] if str(item)]
+        if subjects:
+            for subject in subjects:
+                try:
+                    return self._choose_exercise(subject=subject)
+                except KeyError:
+                    continue
+            return None
+        try:
+            return self._choose_exercise()
+        except KeyError:
+            return None
+
     def _choose_exercise(self, *, exercise_id: str | None = None, subject: str | None = None) -> dict[str, Any]:
         exercises = self.exercises()
         completed = self._completed_exercise_ids() if exercise_id is None else set()
@@ -923,6 +1066,7 @@ class LearnBuddyRuntime:
         timestamp: str | None = None,
         source: str | None = None,
         scheduled_id: str | None = None,
+        plan_id: str | None = None,
     ) -> dict[str, Any]:
         session = {
             "id": f"sess-{uuid.uuid4().hex[:12]}",
@@ -943,6 +1087,8 @@ class LearnBuddyRuntime:
             session["source"] = source
         if scheduled_id:
             session["scheduled_id"] = scheduled_id
+        if plan_id:
+            session["plan_id"] = plan_id
         return session
 
     def _promote_next(self, state: dict[str, Any]) -> dict[str, Any] | None:

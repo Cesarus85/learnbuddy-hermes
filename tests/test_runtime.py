@@ -312,3 +312,81 @@ def test_runtime_parent_automation_pause_today_and_resume(tmp_path):
     resumed = runtime.set_parent_automation("resume", now="2026-05-27T11:00:00+02:00", timezone_name="Europe/Berlin")
     assert resumed["status"] == "active"
     assert runtime.parent_automation_status(now="2026-05-27T20:00:00+02:00", timezone_name="Europe/Berlin")["paused"] is False
+
+
+def test_runtime_creates_and_controls_active_learning_plan(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_id="kid-plan", child_name="Alex", agent_name="BuddyBot")
+
+    created = runtime.create_learning_plan(
+        {
+            "title": "Brüche festigen",
+            "subjects": ["math", "german"],
+            "focus": ["Brüche", "Lesen"],
+            "daily_goal": 2,
+            "created_by": "parent",
+        }
+    )
+
+    assert created["status"] == "active"
+    assert created["id"].startswith("plan-")
+    assert created["child_id"] == "kid-plan"
+    assert created["title"] == "Brüche festigen"
+    assert created["subjects"] == ["math", "german"]
+    assert created["focus"] == ["Brüche", "Lesen"]
+    assert created["daily_goal"] == 2
+    status = runtime.learning_plan_status()
+    assert status["active_plan"]["id"] == created["id"]
+    assert status["plans"] == [created]
+    assert (tmp_path / "learnbuddy" / "plans.jsonl").exists()
+    assert (tmp_path / "learnbuddy" / "plan-state.json").exists()
+
+    paused = runtime.set_learning_plan("pause", plan_id=created["id"], reason="Wochenende")
+    assert paused["status"] == "paused"
+    assert paused["reason"] == "Wochenende"
+    assert runtime.learning_plan_status()["active_plan"]["status"] == "paused"
+
+    resumed = runtime.set_learning_plan("resume", plan_id=created["id"])
+    assert resumed["status"] == "active"
+
+    completed = runtime.set_learning_plan("complete", plan_id=created["id"], reason="Ziel erreicht")
+    assert completed["status"] == "completed"
+    assert runtime.learning_plan_status()["active_plan"] is None
+
+
+def test_runtime_dispatches_next_exercise_from_active_learning_plan(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy")
+    math = runtime.add_exercise({"subject": "math", "prompt": "1 + 1?", "answer": "2"})
+    english = runtime.add_exercise({"subject": "english", "prompt": "Translate: Hund", "answer": "dog"})
+    plan = runtime.create_learning_plan({"title": "Englisch üben", "subjects": ["english"], "daily_goal": 1})
+
+    result = runtime.dispatch_learning_plan(now="2026-05-28T10:00:00+02:00")
+
+    assert result["status"] == "opened"
+    assert result["plan"]["id"] == plan["id"]
+    assert result["exercise"]["id"] == english["id"]
+    assert result["exercise"]["id"] != math["id"]
+    assert result["session"]["source"] == "learning_plan"
+    assert result["session"]["plan_id"] == plan["id"]
+    assert runtime.status()["pending"]["exercise_id"] == english["id"]
+
+
+def test_runtime_learning_plan_respects_pending_pause_and_daily_goal(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy")
+    first = runtime.add_exercise({"subject": "math", "prompt": "1 + 1?", "answer": "2"})
+    second = runtime.add_exercise({"subject": "math", "prompt": "2 + 2?", "answer": "4"})
+    plan = runtime.create_learning_plan({"title": "Mathe", "subjects": ["math"], "daily_goal": 1})
+
+    opened = runtime.dispatch_learning_plan(now="2026-05-28T10:00:00+02:00")
+    assert opened["status"] == "opened"
+    assert opened["exercise"]["id"] == first["id"]
+    assert runtime.dispatch_learning_plan(now="2026-05-28T10:05:00+02:00")["status"] == "pending_exists"
+    runtime.submit_answer("2", timestamp="2026-05-28T10:06:00+02:00")
+    limit = runtime.dispatch_learning_plan(now="2026-05-28T11:00:00+02:00")
+    assert limit["status"] == "plan_daily_goal_reached"
+    assert limit["daily_goal"] == 1
+
+    runtime.set_learning_plan("pause", plan_id=plan["id"], reason="Pause")
+    paused = runtime.dispatch_learning_plan(now="2026-05-29T10:00:00+02:00")
+    assert paused["status"] == "plan_paused"
+    assert paused["plan"]["id"] == plan["id"]
+    assert second["id"] not in [row["exercise_id"] for row in runtime.sessions()]

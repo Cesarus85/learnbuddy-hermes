@@ -18,8 +18,20 @@ _RUNTIME_FILE_NAMES = (
     "answers.jsonl",
     "help_requests.jsonl",
     "scheduled_exercises.jsonl",
+    "plans.jsonl",
+    "plan-state.json",
 )
 _MANIFEST_NAME = "learnbuddy-backup-manifest.json"
+_RUNTIME_FILE_PATHS = {
+    "state.json": "state",
+    "exercises.jsonl": "exercises",
+    "sessions.jsonl": "sessions",
+    "answers.jsonl": "answers",
+    "help_requests.jsonl": "help_requests",
+    "scheduled_exercises.jsonl": "scheduled_exercises",
+    "plans.jsonl": "plans",
+    "plan-state.json": "plan_state",
+}
 
 
 def create_setup(
@@ -65,7 +77,7 @@ def backup_runtime_data(*, data_dir: str | Path, output: str | Path) -> dict[str
     archive.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for name in _RUNTIME_FILE_NAMES:
-            path = getattr(paths, name.split(".")[0] if name != "state.json" else "state")
+            path = getattr(paths, _RUNTIME_FILE_PATHS[name])
             if path.exists():
                 zf.write(path, arcname=name)
                 files.append(name)

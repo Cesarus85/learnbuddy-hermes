@@ -61,8 +61,14 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 
 - Parent examples: `Starte den Lernplan`, `Schick eine geplante Aufgabe`, `Heute eine Mathe-Aufgabe aus dem Plan`
 - Tool: `learnbuddy_dispatch_plan`
-- Rule: policy-bounded. The command respects `allowed_hours` and existing pending sessions. `daily_auto_limit` gates automatic exercise selection; `queue_max` caps queued follow-up work behind the active pending session; explicit due rows from `learnbuddy_schedule_exercise` wait behind an existing pending task, then dispatch even if the automatic daily limit is already used. It is also the dispatcher that makes scheduled rows child-visible by opening, delivering, and marking them dispatched.
+- Rule: policy-bounded. The command respects `allowed_hours` and existing pending sessions. Due rows from `learnbuddy_schedule_exercise` go first; if none are due and an active learning plan exists, it selects from that plan's configured subjects and records `source=learning_plan` plus `plan_id` on the opened session. `daily_goal` limits plan-dispatched items per local day. `daily_auto_limit` gates only generic automatic exercise selection; `queue_max` caps queued follow-up work behind the active pending session. It is also the dispatcher that makes scheduled rows child-visible by opening, delivering, and marking them dispatched.
 - Installable timer: `scripts/install-dispatch-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy dispatch-plan` repeatedly.
+
+### Learning plan management
+
+- Parent examples: `Erstelle einen Lernplan für Englisch`, `Welcher Lernplan ist aktiv?`, `Pausiere den Lernplan`, `Lernplan beendet`
+- Tools: `learnbuddy_create_learning_plan`, `learnbuddy_learning_plan_status`, `learnbuddy_control_learning_plan`
+- Rule: parent/admin only. Plans are bounded state over existing exercises; they do not generate free-form child tasks. Create/control mutate plan state only, status is read-only, and delivery still happens through `learnbuddy_dispatch_plan`.
 
 ### Schedule one concrete exercise for later
 

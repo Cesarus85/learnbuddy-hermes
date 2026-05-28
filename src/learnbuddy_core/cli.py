@@ -220,6 +220,15 @@ def cmd_dispatch_plan(args: argparse.Namespace) -> int:
         if scheduled is None and runtime.pending_scheduled_exercises():
             _print_json({"status": "no_due_scheduled_exercise", "now": now.isoformat()})
             return 0
+    if scheduled is None and not args.exercise_id and not args.subject and runtime.active_learning_plan():
+        result = runtime.dispatch_learning_plan(now=now.isoformat(), timezone_name=config.timezone)
+        if result.get("status") == "opened":
+            delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
+            result["delivery"] = delivery_result.get("delivery")
+            result["delivery_status"] = delivery_result.get("status")
+            result["session"] = delivery_result.get("session") or result.get("session")
+        _print_json(result)
+        return 0
     auto_count = _auto_sessions_today(runtime, now, config.timezone)
     if scheduled is None and auto_count >= config.daily_auto_limit:
         _print_json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
@@ -393,6 +402,28 @@ def cmd_help_request(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_plan(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    action = args.plan_command.replace("-", "_")
+    if action == "status":
+        _print_json(runtime.learning_plan_status())
+        return 0
+    if action == "create":
+        plan = runtime.create_learning_plan({
+            "title": args.title,
+            "subjects": args.subject or [],
+            "focus": args.focus or [],
+            "daily_goal": args.daily_goal,
+            "created_by": args.created_by,
+        })
+        _print_json({"status": plan["status"], "plan": plan})
+        return 0
+    result = runtime.set_learning_plan(action, plan_id=args.plan_id, reason=args.reason)
+    _print_json(result)
+    return 0 if result.get("status") not in {"unknown_plan", "no_active_plan"} else 1
+
+
 def cmd_watch_telegram_answers(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
     result = process_child_telegram_answers(
@@ -520,6 +551,26 @@ def build_parser() -> argparse.ArgumentParser:
     help_request.add_argument("--urgent", action="store_true")
     help_request.add_argument("--notify", action="store_true")
     help_request.set_defaults(func=cmd_help_request)
+
+    plan = sub.add_parser("plan", help="create, inspect, pause, resume, or complete learning plans")
+    plan_sub = plan.add_subparsers(dest="plan_command", required=True)
+    plan_create = plan_sub.add_parser("create", help="create and activate a parent-approved learning plan")
+    _add_runtime_options(plan_create)
+    plan_create.add_argument("--title", required=True)
+    plan_create.add_argument("--subject", action="append", choices=["math", "german", "english", "general"], help="subject allowed by this plan; repeatable")
+    plan_create.add_argument("--focus", action="append", help="short focus/topic label; repeatable")
+    plan_create.add_argument("--daily-goal", type=int, default=1, help="maximum plan-dispatched exercises per local day")
+    plan_create.add_argument("--created-by", choices=["parent", "system"], default="parent")
+    plan_create.set_defaults(func=cmd_plan)
+    plan_status = plan_sub.add_parser("status", help="show active and historical learning plans")
+    _add_runtime_options(plan_status)
+    plan_status.set_defaults(func=cmd_plan)
+    for action_name in ("pause", "resume", "complete", "cancel"):
+        action_parser = plan_sub.add_parser(action_name, help=f"{action_name} the active or selected learning plan")
+        _add_runtime_options(action_parser)
+        action_parser.add_argument("--plan-id", help="specific plan id; defaults to active plan")
+        action_parser.add_argument("--reason", help="short parent-facing reason")
+        action_parser.set_defaults(func=cmd_plan)
 
     watch = sub.add_parser("watch-telegram-answers", help="process one pending child Telegram answer")
     watch.add_argument("--config", help="path to learnbuddy.yaml")

@@ -50,7 +50,7 @@ Web/PWA, API, and iOS are later surfaces over the same core operations. They sho
 ## Current roadmap
 
 - `0.1`: Telegram-first self-hosted MVP, local CLI lifecycle, setup, doctor, backup/restore, demo fixtures, controlled E2E smoke
-- `0.2`: VPS/cloud-LLM setup docs and hardening for the Telegram MVP
+- `0.2`: learning-plan management and VPS/cloud-LLM hardening for the Telegram MVP
 - `0.3`: Parent dashboard / PWA as a second surface over the tested core
 - `0.4`: multiple children and parent devices
 - `0.5`: iOS companion app
@@ -107,9 +107,11 @@ learnbuddy setup \
 
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
-learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
+learnbuddy plan create --config ./learnbuddy.yaml --title "Mathe-Woche" --subject math --daily-goal 1
+learnbuddy dispatch-plan --config ./learnbuddy.yaml
 learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy answer --config ./learnbuddy.yaml "4"
+learnbuddy plan status --config ./learnbuddy.yaml
 learnbuddy status --config ./learnbuddy.yaml
 learnbuddy help-request --config ./learnbuddy.yaml --reason "Learner needs a parent hint." --notify
 learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnbuddy.env
@@ -161,7 +163,7 @@ delivery:
       target_env: LEARNBUDDY_ALLOWED_PARENT_CHAT_ID
 ```
 
-`learnbuddy dispatch-plan` opens and delivers one due scheduled or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). `daily_auto_limit` gates automatic selection; `queue_max` caps follow-up tasks while one exercise is open; explicit parent-scheduled due rows wait behind pending work and then dispatch even if the automatic daily limit is already used. `learnbuddy next --deliver` uses the child adapter for manual parent-open flows and persists child-delivery metadata on the pending session. `learnbuddy deliver-pending` repairs/resends the currently pending prompt when a parent reports that the learner never saw it. `learnbuddy report --notify` uses the parent adapter. `learnbuddy watch-telegram-answers` evaluates one Kids-bot answer, sends feedback, repairs any undelivered pending prompt when there is no answer, and if a queued exercise is promoted after a correct/exhausted answer, delivers that next prompt to the child automatically. Child control messages are intentionally narrow: `Nochmal`/`nochmal senden` resends the current pending prompt without counting as an answer, `Hilfe`/`Ich weiß nicht` creates a bounded parent-help request, and `Noch eine` is policy-bounded — with a pending task it tells the learner to finish first; without a pending task it may open and deliver one automatic exercise only when `allowed_hours` and `daily_auto_limit` allow it. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
+`learnbuddy dispatch-plan` opens and delivers one due scheduled or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). When an active learning plan exists, `dispatch-plan` selects from that plan's configured subjects and records `source=learning_plan` plus `plan_id` on the session; `daily_goal` limits plan-dispatched items per local day. Without an active plan, `daily_auto_limit` gates generic automatic selection. `queue_max` caps follow-up tasks while one exercise is open; explicit parent-scheduled due rows wait behind pending work and then dispatch even if the automatic daily limit is already used. `learnbuddy next --deliver` uses the child adapter for manual parent-open flows and persists child-delivery metadata on the pending session. `learnbuddy deliver-pending` repairs/resends the currently pending prompt when a parent reports that the learner never saw it. `learnbuddy report --notify` uses the parent adapter. `learnbuddy watch-telegram-answers` evaluates one Kids-bot answer, sends feedback, repairs any undelivered pending prompt when there is no answer, and if a queued exercise is promoted after a correct/exhausted answer, delivers that next prompt to the child automatically. Child control messages are intentionally narrow: `Nochmal`/`nochmal senden` resends the current pending prompt without counting as an answer, `Hilfe`/`Ich weiß nicht` creates a bounded parent-help request, and `Noch eine` is policy-bounded — with a pending task it tells the learner to finish first; without a pending task it may open and deliver one automatic exercise only when `allowed_hours` and plan/daily limits allow it. If Telegram env vars are missing, `doctor` reports missing variable names without printing secret values.
 
 For Hermes gateway/plugin use, set profile env defaults so the model can call LearnBuddy tools without repeating local paths:
 
@@ -170,7 +172,7 @@ LEARNBUDDY_CONFIG_PATH=/absolute/path/to/learnbuddy.yaml
 LEARNBUDDY_ENV_FILE=/absolute/path/to/learnbuddy.env
 ```
 
-The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, delivers it to the configured child adapter in one bounded call, and stores delivery metadata on the pending session. `learnbuddy_parent_command_contracts` publishes the Telegram parent-operation contract for status, report, resend, scheduled dispatch, and create/send routing. `learnbuddy_dispatch_plan` is scheduler-safe for one due scheduled or automatic exercise, and `learnbuddy_deliver_pending_exercise` repairs/resends the currently pending prompt if the learner did not receive it. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, repair/resend is explicit, status reads are separate, and pushed parent reports require `notify=true` explicitly.
+The plugin's `learnbuddy_create_and_send_exercise` tool is the simplest parent flow: it creates an exercise, opens it, delivers it to the configured child adapter in one bounded call, and stores delivery metadata on the pending session. `learnbuddy_create_learning_plan`, `learnbuddy_learning_plan_status`, and `learnbuddy_control_learning_plan` expose parent-approved learning-plan management; plans guide `learnbuddy_dispatch_plan` over existing exercises and do not generate unbounded tasks. `learnbuddy_parent_command_contracts` publishes the Telegram parent-operation contract for status, report, resend, scheduled dispatch, learning-plan control, and create/send routing. `learnbuddy_dispatch_plan` is scheduler-safe for one due scheduled, plan-selected, or generic automatic exercise, and `learnbuddy_deliver_pending_exercise` repairs/resends the currently pending prompt if the learner did not receive it. The plugin publishes guided JSON schemas for Hermes so parent-chat commands stay narrow: create/send needs a concrete child prompt, repair/resend is explicit, plan control is parent/admin only, status reads are separate, and pushed parent reports require `notify=true` explicitly.
 
 For direct child chat, create the separate profile with `scripts/setup-child-profile.sh`, then install the dedicated gateway unit with `scripts/install-child-gateway-service.sh --profile learnbuddy-child`. The installer refuses to start/enable unless the child profile has a dedicated `TELEGRAM_BOT_TOKEN`, allowlists, home channel, and free-response chat config, and it rejects accidental reuse of the default profile's Telegram bot token.
 

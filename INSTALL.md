@@ -86,15 +86,17 @@ The generated `safety.queue_max` limits follow-up tasks while one exercise is op
 
 ## 5. Run the full dry-run smoke test
 
-This step covers `learnbuddy schedule-exercise`, `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path.
+This step covers `learnbuddy schedule-exercise`, `learnbuddy plan`, `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path.
 
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
 learnbuddy queue --config ./learnbuddy.yaml --subject math --prompt "2 + 2?" --answer "4"
 learnbuddy schedule-exercise --config ./learnbuddy.yaml --subject math --prompt "8 + 9?" --answer "17" --due-at "2099-01-01T10:30:00+01:00"
-learnbuddy dispatch-plan --config ./learnbuddy.yaml --subject math
+learnbuddy plan create --config ./learnbuddy.yaml --title "Mathe-Woche" --subject math --daily-goal 1
+learnbuddy dispatch-plan --config ./learnbuddy.yaml
 learnbuddy deliver-pending --config ./learnbuddy.yaml
 learnbuddy answer --config ./learnbuddy.yaml "4"
+learnbuddy plan status --config ./learnbuddy.yaml
 learnbuddy status --config ./learnbuddy.yaml
 learnbuddy help-request --config ./learnbuddy.yaml --reason "Learner needs a parent hint." --notify
 learnbuddy watch-telegram-answers --config ./learnbuddy.yaml --env-file ./learnbuddy.env

@@ -19,7 +19,7 @@ from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
 PLUGIN_NAME = "learnbuddy-learning"
-PLUGIN_VERSION = "0.1.0-alpha.19"
+PLUGIN_VERSION = "0.1.0-alpha.20"
 
 PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     {
@@ -75,7 +75,14 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
         "tool": "learnbuddy_dispatch_plan",
         "examples": ["Starte den Lernplan", "Schick eine geplante Aufgabe", "Heute eine Mathe-Aufgabe aus dem Plan"],
         "policy_bounded": True,
-        "policy": "Respects allowed_hours and existing pending sessions. daily_auto_limit gates automatic selection; explicit parent-scheduled due exercises dispatch after the current pending item clears.",
+        "policy": "Respects allowed_hours and existing pending sessions. Active learning plans guide automatic selection; daily_auto_limit gates generic automatic selection; explicit parent-scheduled due exercises dispatch after the current pending item clears.",
+    },
+    {
+        "operation": "learning_plan",
+        "tool": "learnbuddy_create_learning_plan / learnbuddy_learning_plan_status / learnbuddy_control_learning_plan",
+        "examples": ["Erstelle einen Lernplan für Englisch", "Welcher Lernplan ist aktiv?", "Pausiere den Lernplan", "Lernplan beendet"],
+        "policy_bounded": True,
+        "policy": "Parent/admin only. Plans select from existing exercises by configured subject/focus and never generate unbounded child tasks by themselves.",
     },
     {
         "operation": "create_and_send_exercise",
@@ -172,6 +179,35 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "learnbuddy_parent_command_contracts": {
         "type": "object",
         "properties": COMMON_PROPERTIES,
+        "additionalProperties": False,
+    },
+    "learnbuddy_create_learning_plan": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "title": {"type": "string", "description": "Parent-facing title for the learning plan."},
+            "subjects": {"type": "array", "items": {"type": "string", "enum": ["math", "german", "english", "general"]}, "description": "Subjects the plan may dispatch from existing exercises."},
+            "focus": {"type": "array", "items": {"type": "string"}, "description": "Optional short focus/topic labels."},
+            "daily_goal": {"type": "integer", "minimum": 1, "maximum": 10, "default": 1},
+            "created_by": {"type": "string", "enum": ["parent", "system"], "default": "parent"},
+        },
+        "required": ["title"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_learning_plan_status": {
+        "type": "object",
+        "properties": COMMON_PROPERTIES,
+        "additionalProperties": False,
+    },
+    "learnbuddy_control_learning_plan": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "action": {"type": "string", "enum": ["pause", "resume", "complete", "cancel"], "description": "Control the active or selected learning plan."},
+            "plan_id": {"type": "string", "description": "Specific plan id; defaults to the active plan."},
+            "reason": {"type": "string", "description": "Optional short parent-facing reason."},
+        },
+        "required": ["action"],
         "additionalProperties": False,
     },
     "learnbuddy_submit_answer": {
@@ -469,6 +505,14 @@ def learnbuddy_dispatch_plan(args: dict[str, Any] | None = None) -> str:
         scheduled = runtime.next_due_scheduled_exercise(now=now.isoformat(), timezone_name=config.timezone)
         if scheduled is None and runtime.pending_scheduled_exercises():
             return _json({"status": "no_due_scheduled_exercise", "now": now.isoformat()})
+    if scheduled is None and not args.get("exercise_id") and not args.get("subject") and runtime.active_learning_plan():
+        result = runtime.dispatch_learning_plan(now=now.isoformat(), timezone_name=config.timezone)
+        if result.get("status") == "opened":
+            delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
+            result["delivery"] = delivery_result.get("delivery")
+            result["delivery_status"] = delivery_result.get("status")
+            result["session"] = delivery_result.get("session") or result.get("session")
+        return _json(result)
     auto_count = _auto_sessions_today(runtime, now, config.timezone)
     if scheduled is None and auto_count >= config.daily_auto_limit:
         return _json({"status": "daily_limit_reached", "daily_auto_limit": config.daily_auto_limit, "auto_sessions_today": auto_count})
@@ -552,6 +596,33 @@ def learnbuddy_parent_command_contracts(args: dict[str, Any] | None = None) -> s
             "child_answer_notifications_may_be_automatic": True,
         },
     })
+
+
+def learnbuddy_create_learning_plan(args: dict[str, Any] | None = None) -> str:
+    """Create and activate a bounded parent-approved learning plan."""
+    args = dict(args or {})
+    runtime = _runtime(args)
+    plan = runtime.create_learning_plan({
+        "title": args.get("title"),
+        "subjects": args.get("subjects") or [],
+        "focus": args.get("focus") or [],
+        "daily_goal": args.get("daily_goal") or 1,
+        "created_by": args.get("created_by") or "parent",
+    })
+    return _json({"status": plan["status"], "plan": plan})
+
+
+def learnbuddy_learning_plan_status(args: dict[str, Any] | None = None) -> str:
+    """Return active and historical learning plans."""
+    runtime = _runtime(dict(args or {}))
+    return _json(runtime.learning_plan_status())
+
+
+def learnbuddy_control_learning_plan(args: dict[str, Any] | None = None) -> str:
+    """Pause, resume, complete, or cancel the active/selected learning plan."""
+    args = dict(args or {})
+    runtime = _runtime(args)
+    return _json(runtime.set_learning_plan(str(args.get("action") or ""), plan_id=args.get("plan_id"), reason=args.get("reason")))
 
 
 def learnbuddy_submit_answer(args: dict[str, Any] | None = None) -> str:
@@ -754,6 +825,9 @@ TOOLS = [
     ("learnbuddy_deliver_pending_exercise", learnbuddy_deliver_pending_exercise, "learnbuddy_learning", "Repair or resend the current pending prompt to the child. Use when a parent reports that the learner did not receive the task."),
     ("learnbuddy_schedule_exercise", learnbuddy_schedule_exercise, "learnbuddy_learning", "Parent UX one-shot scheduling: create a concrete exercise with an expected answer and due_at for later dispatcher delivery."),
     ("learnbuddy_dispatch_plan", learnbuddy_dispatch_plan, "learnbuddy_learning", "Scheduler-safe: open and deliver one due automatic LearnBuddy exercise when allowed-hours and daily-limit policy permit it."),
+    ("learnbuddy_create_learning_plan", learnbuddy_create_learning_plan, "learnbuddy_learning", "Parent/admin: create and activate a bounded learning plan over existing exercises. Does not generate child tasks by itself."),
+    ("learnbuddy_learning_plan_status", learnbuddy_learning_plan_status, "learnbuddy_learning", "Parent/admin: show the active learning plan and plan history."),
+    ("learnbuddy_control_learning_plan", learnbuddy_control_learning_plan, "learnbuddy_learning", "Parent/admin: pause, resume, complete, or cancel the active learning plan."),
     ("learnbuddy_parent_command_contracts", learnbuddy_parent_command_contracts, "learnbuddy_learning", "Parent command contract reference for Telegram routing: status, report, resend pending, dispatch plan, and create/send exercise. Read before improvising ambiguous parent commands."),
     ("learnbuddy_submit_answer", learnbuddy_submit_answer, "learnbuddy_learning", "Submit an answer for the currently pending LearnBuddy exercise."),
     ("learnbuddy_learning_status", learnbuddy_learning_status, "learnbuddy_learning", "Show LearnBuddy current pending/queue status only; not answer history."),
