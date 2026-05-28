@@ -1,4 +1,5 @@
 import json
+import sys
 
 from learnbuddy_core.cli import main
 
@@ -65,6 +66,98 @@ delivery:
     status = json.loads(capsys.readouterr().out)
     assert status["pending_review"] == 0
     assert len(status["material_sets"]) == 1
+
+
+def test_cli_material_add_file_uses_ocr_command_for_photo_review(capsys, tmp_path):
+    data_dir = tmp_path / "data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    photo = tmp_path / "worksheet.jpg"
+    photo.write_bytes(b"fake image bytes")
+    ocr = tmp_path / "fake_ocr.py"
+    ocr.write_text(
+        """
+import json
+import sys
+assert sys.argv[1].endswith("worksheet.jpg")
+print(json.dumps({
+    "subject": "math",
+    "topic_guess": "Plusaufgaben",
+    "text_excerpt": "1) 10 + 5?\\n2) 12 + 8?",
+    "task_candidates": ["10 + 5?", "12 + 8?"],
+}))
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert main([
+        "material",
+        "add-file",
+        "--config",
+        str(config_path),
+        "--title",
+        "Foto Arbeitsblatt",
+        "--subject",
+        "math",
+        "--file",
+        str(photo),
+        "--ocr-command",
+        f"{sys.executable} {ocr}",
+    ]) == 0
+    imported = json.loads(capsys.readouterr().out)
+
+    assert imported["status"] == "pending_review"
+    assert imported["extraction"]["status"] == "ok"
+    assert imported["material"]["source_type"] == "image"
+    assert imported["material"]["task_candidates"] == ["10 + 5?", "12 + 8?"]
+    assert imported["material"]["metadata"]["extraction"]["provider"] == "command"
+    assert not (data_dir / "exercises.jsonl").exists()
+
+    material_id = imported["material"]["id"]
+    assert main([
+        "material",
+        "approve",
+        "--config",
+        str(config_path),
+        "--material-id",
+        material_id,
+        "--expected-answer",
+        "15",
+        "--expected-answer",
+        "20",
+    ]) == 0
+    approved = json.loads(capsys.readouterr().out)
+    assert approved["created"] == 2
+
+
+def test_cli_material_add_file_refuses_unsupported_file_without_side_effect(capsys, tmp_path):
+    data_dir = tmp_path / "data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(f"storage:\n  data_dir: {data_dir}\n", encoding="utf-8")
+    unsupported = tmp_path / "worksheet.heic"
+    unsupported.write_bytes(b"heic-ish")
+
+    assert main([
+        "material",
+        "add-file",
+        "--config",
+        str(config_path),
+        "--title",
+        "HEIC Arbeitsblatt",
+        "--file",
+        str(unsupported),
+    ]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "unsupported_file"
+    assert not (data_dir / "material-sets.jsonl").exists()
 
 
 def test_doctor_displays_configured_child_and_agent(capsys, tmp_path):

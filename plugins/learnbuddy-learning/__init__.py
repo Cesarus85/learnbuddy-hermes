@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from learnbuddy_core.cli import _auto_sessions_today, _inside_allowed_hours, _parse_datetime, run_daily_parent_status, run_weekly_parent_status
 from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
+from learnbuddy_core.material_import import build_material_from_file
 from learnbuddy_core.notifier import ParentNotifier
 from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
@@ -86,11 +87,11 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
     },
     {
         "operation": "material_review",
-        "tool": "learnbuddy_add_learning_material / learnbuddy_material_status / learnbuddy_approve_material_tasks",
-        "examples": ["Ich habe ein Arbeitsblatt", "Zeig die Material-Warteschlange", "Gib die ersten zwei Aufgaben mit Antworten 15 und 20 frei"],
-        "requires": ["material_id", "expected_answers"],
+        "tool": "learnbuddy_add_learning_material / learnbuddy_import_learning_material_file / learnbuddy_material_status / learnbuddy_approve_material_tasks",
+        "examples": ["Ich habe ein Arbeitsblatt", "Importiere dieses Material", "Foto/PDF vom Arbeitsblatt hochladen", "Zeig die Material-Warteschlange", "Gib die ersten zwei Aufgaben mit Antworten 15 und 20 frei"],
+        "requires": ["material_id", "expected_answers", "file_path"],
         "policy_bounded": True,
-        "policy": "Parent/admin only. Material intake stores review state first; approval creates exercises only after ordered expected answers are supplied. Import/status never sends to the child.",
+        "policy": "Parent/admin only. Pasted material and worksheet photos/PDFs become review state first; approval creates exercises only after ordered expected answers are supplied. Import/status never sends to the child.",
     },
     {
         "operation": "create_and_send_exercise",
@@ -230,6 +231,20 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "notes": {"type": "string", "description": "Short parent/admin note."},
         },
         "required": ["title", "text_excerpt"],
+        "additionalProperties": False,
+    },
+    "learnbuddy_import_learning_material_file": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "title": {"type": "string", "description": "Parent-facing title for the reviewed file material."},
+            "subject": {"type": "string", "enum": ["math", "german", "english", "general"], "default": "general"},
+            "file_path": {"type": "string", "description": "Local path to a parent-supplied worksheet photo, PDF, or text file cached on the gateway host."},
+            "ocr_command": {"type": "string", "description": "Optional OCR/vision command for image files. Receives file_path as final argv item; LEARNBUDDY_MATERIAL_OCR_COMMAND can be used instead."},
+            "max_bytes": {"type": "integer", "minimum": 1, "default": 8388608, "description": "Maximum accepted file size before extraction."},
+            "notes": {"type": "string", "description": "Short parent/admin note."},
+        },
+        "required": ["title", "file_path"],
         "additionalProperties": False,
     },
     "learnbuddy_material_status": {
@@ -651,6 +666,29 @@ def learnbuddy_add_learning_material(args: dict[str, Any] | None = None) -> str:
     return _json({"status": material["status"], "material": material})
 
 
+def learnbuddy_import_learning_material_file(args: dict[str, Any] | None = None) -> str:
+    """Extract parent-supplied local file material into review state without child delivery."""
+    args = dict(args or {})
+    runtime = _runtime(args)
+    import_result = build_material_from_file(
+        args.get("file_path") or "",
+        title=str(args.get("title") or ""),
+        subject=str(args.get("subject") or "general"),
+        notes=str(args.get("notes") or ""),
+        ocr_command=args.get("ocr_command") or os.getenv("LEARNBUDDY_MATERIAL_OCR_COMMAND"),
+        max_bytes=int(args.get("max_bytes") or 8 * 1024 * 1024),
+    )
+    if import_result.get("status") != "ok":
+        return _json(import_result)
+    material = runtime.add_material_set(import_result["material"])
+    return _json({
+        "status": material["status"],
+        "material": material,
+        "extraction": import_result.get("extraction"),
+        "preview": import_result.get("preview"),
+    })
+
+
 def learnbuddy_material_status(args: dict[str, Any] | None = None) -> str:
     """Return the parent/admin material review queue."""
     args = dict(args or {})
@@ -901,6 +939,7 @@ TOOLS = [
     ("learnbuddy_learning_plan_status", learnbuddy_learning_plan_status, "learnbuddy_learning", "Parent/admin: show the active learning plan and plan history."),
     ("learnbuddy_control_learning_plan", learnbuddy_control_learning_plan, "learnbuddy_learning", "Parent/admin: pause, resume, complete, or cancel the active learning plan."),
     ("learnbuddy_add_learning_material", learnbuddy_add_learning_material, "learnbuddy_learning", "Parent/admin: store parent-supplied worksheet/material text for review; no child delivery or exercise creation."),
+    ("learnbuddy_import_learning_material_file", learnbuddy_import_learning_material_file, "learnbuddy_learning", "Parent/admin: extract a cached worksheet photo, PDF, or text file into material review state; no child delivery or exercise creation."),
     ("learnbuddy_material_status", learnbuddy_material_status, "learnbuddy_learning", "Parent/admin: show pending reviewed learning materials and approval state."),
     ("learnbuddy_approve_material_tasks", learnbuddy_approve_material_tasks, "learnbuddy_learning", "Parent/admin: convert reviewed material candidates into exercises only after ordered expected answers are provided."),
     ("learnbuddy_parent_command_contracts", learnbuddy_parent_command_contracts, "learnbuddy_learning", "Parent command contract reference for Telegram routing: status, report, resend pending, dispatch plan, and create/send exercise. Read before improvising ambiguous parent commands."),

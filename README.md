@@ -15,6 +15,7 @@ LearnBuddy is a bounded learning companion that can:
 - track progress in local JSON/JSONL runtime files
 - render parent-facing summaries
 - record bounded parent-help requests and notify parents only when explicitly requested
+- import parent-supplied worksheet text/files/photos into a review queue before any child-visible exercise exists
 - run network-free in `dry_run` mode or via Telegram adapters
 
 ## What this is not

@@ -112,7 +112,7 @@ The generated `safety.queue_max` limits follow-up tasks while one exercise is op
 
 ## 6. Run the full dry-run smoke test
 
-This step covers `learnbuddy schedule-exercise`, `learnbuddy material add-text`, `learnbuddy material approve`, `learnbuddy plan`, `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path.
+This step covers `learnbuddy schedule-exercise`, `learnbuddy material add-text`, `learnbuddy material add-file`, `learnbuddy material approve`, `learnbuddy plan`, `learnbuddy dispatch-plan`, `learnbuddy deliver-pending`, and `learnbuddy report --notify` in the full smoke path. `learnbuddy material add-file` can read local text/PDF files; worksheet photos require an OCR/vision helper via `--ocr-command` or `LEARNBUDDY_MATERIAL_OCR_COMMAND` and still create review state only.
 
 ```bash
 learnbuddy doctor --config ./learnbuddy.yaml
@@ -122,6 +122,11 @@ learnbuddy schedule-exercise --config ./learnbuddy.yaml --subject math --prompt 
 learnbuddy material add-text --config ./learnbuddy.yaml --title "Arbeitsblatt 1" --subject math --text "10 + 5?" --candidate "10 + 5?"
 MATERIAL_ID=$(learnbuddy material status --config ./learnbuddy.yaml | python -c 'import json,sys; print(json.load(sys.stdin)["material_sets"][-1]["id"])')
 learnbuddy material approve --config ./learnbuddy.yaml --material-id "$MATERIAL_ID" --expected-answer "15"
+# Optional file/photo path: export LEARNBUDDY_MATERIAL_OCR_COMMAND="python scripts/your_ocr_helper.py" for images.
+printf '1) 6 + 7?\n' > /tmp/learnbuddy-worksheet.txt
+learnbuddy material add-file --config ./learnbuddy.yaml --title "Arbeitsblatt Datei" --subject math --file /tmp/learnbuddy-worksheet.txt
+MATERIAL_ID=$(learnbuddy material status --config ./learnbuddy.yaml | python -c 'import json,sys; print(json.load(sys.stdin)["material_sets"][-1]["id"])')
+learnbuddy material approve --config ./learnbuddy.yaml --material-id "$MATERIAL_ID" --expected-answer "13"
 learnbuddy plan create --config ./learnbuddy.yaml --title "Mathe-Woche" --subject math --daily-goal 1
 learnbuddy dispatch-plan --config ./learnbuddy.yaml
 learnbuddy deliver-pending --config ./learnbuddy.yaml

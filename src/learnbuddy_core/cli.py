@@ -13,6 +13,7 @@ from .delivery import DeliveryMessage, delivery_adapter_from_config
 from .doctor import build_doctor_report, doctor_exit_code, format_text_report
 from .exercise_packs import DEFAULT_PACK, available_packs, import_exercise_pack
 from .maintenance import backup_runtime_data, create_setup, restore_runtime_data
+from .material_import import build_material_from_file
 from .notifier import ParentNotifier
 from .runtime import LearnBuddyRuntime
 from .telegram_answer_watcher import load_env_file, process_child_telegram_answers
@@ -217,6 +218,26 @@ def cmd_material(args: argparse.Namespace) -> int:
             "notes": args.notes or "",
         })
         _print_json({"status": "pending_review", "material": material})
+        return 0
+    if args.material_command == "add-file":
+        import_result = build_material_from_file(
+            args.file,
+            title=args.title,
+            subject=args.subject,
+            notes=args.notes or "",
+            ocr_command=args.ocr_command or os.getenv("LEARNBUDDY_MATERIAL_OCR_COMMAND"),
+            max_bytes=args.max_bytes,
+        )
+        if import_result.get("status") != "ok":
+            _print_json(import_result)
+            return 1
+        material = runtime.add_material_set(import_result["material"])
+        _print_json({
+            "status": "pending_review",
+            "material": material,
+            "extraction": import_result.get("extraction"),
+            "preview": import_result.get("preview"),
+        })
         return 0
     if args.material_command == "status":
         _print_json(runtime.material_status(limit=args.limit))
@@ -565,6 +586,15 @@ def build_parser() -> argparse.ArgumentParser:
     material_add.add_argument("--candidate", action="append", help="reviewable task candidate; repeat for multiple tasks")
     material_add.add_argument("--notes", help="short parent/admin note")
     material_add.set_defaults(func=cmd_material)
+    material_file = material_sub.add_parser("add-file", help="extract text/candidates from a local worksheet photo, PDF, or text file for parent review")
+    _add_runtime_options(material_file)
+    material_file.add_argument("--title", required=True)
+    material_file.add_argument("--subject", choices=["math", "german", "english", "general"], default="general")
+    material_file.add_argument("--file", required=True, help="local material file path (.jpg/.png/.webp/.pdf/.txt/.md/.csv)")
+    material_file.add_argument("--ocr-command", help="optional OCR/vision command for images; receives the file path as final argv item; can also use LEARNBUDDY_MATERIAL_OCR_COMMAND")
+    material_file.add_argument("--max-bytes", type=int, default=8 * 1024 * 1024, help="maximum accepted upload/file size before extraction")
+    material_file.add_argument("--notes", help="short parent/admin note")
+    material_file.set_defaults(func=cmd_material)
     material_status = material_sub.add_parser("status", help="show material review queue")
     _add_runtime_options(material_status)
     material_status.add_argument("--limit", type=int, default=10)

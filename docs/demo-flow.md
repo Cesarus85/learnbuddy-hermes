@@ -7,7 +7,7 @@ This is a complete public-alpha smoke path using synthetic data only. It is safe
 Prove the full lifecycle:
 
 ```text
-setup -> seed -> doctor -> queue -> schedule-exercise -> material add-text -> material approve -> plan create -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> weekly-status --notify -> report --notify -> backup -> restore
+setup -> seed -> doctor -> queue -> schedule-exercise -> material add-text -> material add-file -> material approve -> plan create -> dispatch-plan -> next --deliver -> deliver-pending -> answer -> status -> weekly-status --notify -> report --notify -> backup -> restore
 ```
 
 No Telegram token, chat ID, production child data, or private deployment path is needed.
@@ -79,7 +79,7 @@ The command returns JSON with an exercise id.
 
 ## 5. Material review, schedule/open, dry-run deliver, and repair-send if needed
 
-This is the material/scheduled/plan/automatic dispatch part of the demo lifecycle. `learnbuddy material add-text` stores parent-supplied worksheet or copied material candidates in `material-sets.jsonl`; `learnbuddy material approve` converts selected candidates into bounded exercises only after ordered expected answers are provided. `learnbuddy schedule-exercise` records a parent-created timed exercise for later; it does not prove the learner saw anything. `learnbuddy plan create` stores bounded parent-approved plan state over existing exercises. `dispatch-plan` is the delivery dispatcher: it opens and delivers one due scheduled, active-plan, or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). Active plans record `source=learning_plan` and `plan_id`; `daily_goal` gates plan-dispatched items. `daily_auto_limit` gates generic automatic exercise selection; explicit parent-scheduled due exercises wait behind pending work, then dispatch even if the automatic daily limit is already used. `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful delivery.
+This is the material/scheduled/plan/automatic dispatch part of the demo lifecycle. `learnbuddy material add-text` stores parent-supplied worksheet or copied material candidates in `material-sets.jsonl`; `learnbuddy material add-file` extracts local text/PDF files or worksheet photos into the same review queue. For photos, configure `LEARNBUDDY_MATERIAL_OCR_COMMAND` or pass `--ocr-command`; no image OCR dependency is required unless you opt in. `learnbuddy material approve` converts selected candidates into bounded exercises only after ordered expected answers are provided. `learnbuddy schedule-exercise` records a parent-created timed exercise for later; it does not prove the learner saw anything. `learnbuddy plan create` stores bounded parent-approved plan state over existing exercises. `dispatch-plan` is the delivery dispatcher: it opens and delivers one due scheduled, active-plan, or automatic exercise only when policy allows it (`allowed_hours`, no current pending item). Active plans record `source=learning_plan` and `plan_id`; `daily_goal` gates plan-dispatched items. `daily_auto_limit` gates generic automatic exercise selection; explicit parent-scheduled due exercises wait behind pending work, then dispatch even if the automatic daily limit is already used. `deliver-pending` is the explicit repair path for the "pending but the learner never saw it" case; in dry-run it should report `already_sent` after a successful delivery.
 
 ```bash
 learnbuddy schedule-exercise \
@@ -91,6 +91,11 @@ learnbuddy schedule-exercise \
 learnbuddy material add-text --config ./learnbuddy.yaml --title "Arbeitsblatt 1" --subject math --text "10 + 5?" --candidate "10 + 5?"
 MATERIAL_ID=$(learnbuddy material status --config ./learnbuddy.yaml | python -c 'import json,sys; print(json.load(sys.stdin)["material_sets"][-1]["id"])')
 learnbuddy material approve --config ./learnbuddy.yaml --material-id "$MATERIAL_ID" --expected-answer "15"
+# Optional photo/PDF/text-file material path. For images, set LEARNBUDDY_MATERIAL_OCR_COMMAND or pass --ocr-command.
+printf '1) 6 + 7?\n' > /tmp/learnbuddy-worksheet.txt
+learnbuddy material add-file --config ./learnbuddy.yaml --title "Arbeitsblatt Datei" --subject math --file /tmp/learnbuddy-worksheet.txt
+MATERIAL_ID=$(learnbuddy material status --config ./learnbuddy.yaml | python -c 'import json,sys; print(json.load(sys.stdin)["material_sets"][-1]["id"])')
+learnbuddy material approve --config ./learnbuddy.yaml --material-id "$MATERIAL_ID" --expected-answer "13"
 learnbuddy plan create --config ./learnbuddy.yaml --title "Mathe-Woche" --subject math --daily-goal 1
 learnbuddy dispatch-plan --config ./learnbuddy.yaml
 learnbuddy deliver-pending --config ./learnbuddy.yaml
