@@ -16,6 +16,7 @@ from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
 from learnbuddy_core.material_import import build_material_from_file
 from learnbuddy_core.notifier import ParentNotifier
+from learnbuddy_core.pending_reminders import run_pending_reminder
 from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
 
@@ -57,6 +58,13 @@ PARENT_COMMAND_CONTRACTS: list[dict[str, Any]] = [
         "notify_default": False,
         "policy_bounded": True,
         "policy": "One weekly parent report with compact recommendations. Respects pause-today and once-per-week guards; empty weeks are skipped unless include_empty=true.",
+    },
+    {
+        "operation": "pending_reminder",
+        "tool": "learnbuddy_pending_reminder",
+        "examples": ["Erinnere an die offene Aufgabe", "Prüfe offene Aufgabe und erinnere bei Bedarf", "Pending Reminder laufen lassen"],
+        "policy_bounded": True,
+        "policy": "Sends only due reminders for the existing pending exercise: child reminders after 24h/48h and a parent escalation after 72h. Includes the open prompt and records pending-reminder-state.json to avoid duplicates.",
     },
     {
         "operation": "automation_control",
@@ -146,6 +154,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "subject": {"type": "string", "enum": ["math", "german", "english", "general"]},
             "mode": {"type": "string", "enum": ["manual", "auto"], "default": "manual"},
             "requested_by": {"type": "string", "enum": ["parent", "child", "system"], "default": "parent"},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
             "deliver": {"type": "boolean", "default": False, "description": "Send opened prompt to the child delivery adapter."},
         },
         "additionalProperties": False,
@@ -269,6 +278,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             **COMMON_PROPERTIES,
             "answer": {"type": "string", "description": "Answer text to evaluate for the currently pending exercise."},
             "input_mode": {"type": "string", "enum": ["text", "audio"], "default": "text"},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
         },
         "required": ["answer"],
         "additionalProperties": False,
@@ -316,6 +326,16 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
+    "learnbuddy_pending_reminder": {
+        "type": "object",
+        "properties": {
+            **COMMON_PROPERTIES,
+            "mode": {"type": "string", "enum": ["child_parent", "child_only", "parent_only"], "default": "child_parent"},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
+            "dry_run": {"type": "boolean", "default": False, "description": "Plan due reminders without delivery or state writes."},
+        },
+        "additionalProperties": False,
+    },
     "learnbuddy_parent_automation_control": {
         "type": "object",
         "properties": {
@@ -347,6 +367,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             **COMMON_PROPERTIES,
             "answer": {"type": "string", "description": "Child answer text for the currently pending exercise."},
             "input_mode": {"type": "string", "enum": ["text", "audio"], "default": "text"},
+            "now": {"type": "string", "description": "Optional ISO timestamp override for tests or controlled scheduler runs."},
             "notify_parent": {"type": "boolean", "default": True, "description": "Notify the configured parent adapter about the answer result. Default true for child profiles."},
         },
         "required": ["answer"],
@@ -497,6 +518,7 @@ def learnbuddy_next_exercise(args: dict[str, Any] | None = None) -> str:
         subject=args.get("subject"),
         mode=args.get("mode", "manual"),
         requested_by=args.get("requested_by", "parent"),
+        timestamp=args.get("now") or args.get("timestamp"),
     )
     if args.get("deliver") and result.get("status") == "opened":
         delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
@@ -739,7 +761,7 @@ def learnbuddy_submit_answer(args: dict[str, Any] | None = None) -> str:
     """Evaluate an answer for the currently pending exercise."""
     args = dict(args or {})
     runtime = _runtime(args)
-    return _json(runtime.submit_answer(args.get("answer", ""), input_mode=args.get("input_mode", "text")))
+    return _json(runtime.submit_answer(args.get("answer", ""), input_mode=args.get("input_mode", "text"), timestamp=args.get("now") or args.get("timestamp")))
 
 
 def learnbuddy_learning_status(args: dict[str, Any] | None = None) -> str:
@@ -796,6 +818,20 @@ def learnbuddy_weekly_parent_status(args: dict[str, Any] | None = None) -> str:
     ))
 
 
+def learnbuddy_pending_reminder(args: dict[str, Any] | None = None) -> str:
+    """Send due pending exercise reminders through the configured adapters."""
+    args = dict(args or {})
+    config = _config(args)
+    runtime = _runtime(args)
+    return _json(run_pending_reminder(
+        config,
+        runtime,
+        mode=str(args.get("mode") or "child_parent"),
+        now=args.get("now"),
+        dry_run=bool(args.get("dry_run", False)),
+    ))
+
+
 def learnbuddy_parent_automation_control(args: dict[str, Any] | None = None) -> str:
     """Inspect, pause, or resume parent-facing scheduled automation."""
     args = dict(args or {})
@@ -832,7 +868,7 @@ def learnbuddy_child_submit_answer(args: dict[str, Any] | None = None) -> str:
     config = _config(child_args)
     runtime = _runtime(child_args)
     pending = runtime.status().get("pending")
-    result = runtime.submit_answer(child_args.get("answer", ""), input_mode=child_args.get("input_mode", "text"))
+    result = runtime.submit_answer(child_args.get("answer", ""), input_mode=child_args.get("input_mode", "text"), timestamp=child_args.get("now") or child_args.get("timestamp"))
     if child_args.get("notify_parent", True) and isinstance(pending, dict) and result.get("result") != "no_pending":
         prompt = str(pending.get("prompt") or "die offene Aufgabe")
         answer_text = str(child_args.get("answer", ""))
@@ -949,6 +985,7 @@ TOOLS = [
     ("learnbuddy_parent_report", learnbuddy_parent_report, "learnbuddy_learning", "Summarize LearnBuddy progress for a parent; set notify=true only when the parent asked for a pushed report."),
     ("learnbuddy_daily_parent_status", learnbuddy_daily_parent_status, "learnbuddy_learning", "Scheduler-safe daily parent status: one local-day report with pause, duplicate, and empty-day guards."),
     ("learnbuddy_weekly_parent_status", learnbuddy_weekly_parent_status, "learnbuddy_learning", "Scheduler-safe weekly parent report: current-week summary, recommendations, pause, duplicate, and empty-week guards."),
+    ("learnbuddy_pending_reminder", learnbuddy_pending_reminder, "learnbuddy_learning", "Scheduler-safe pending exercise reminder: child reminders after 24h/48h and parent escalation after 72h for the existing open task."),
     ("learnbuddy_parent_automation_control", learnbuddy_parent_automation_control, "learnbuddy_learning", "Inspect, pause today, or resume LearnBuddy parent-facing scheduled automation."),
     ("learnbuddy_parent_help_request", learnbuddy_parent_help_request, "learnbuddy_learning", "Create a bounded parent-help request. Notify parents only with notify=true; never use for external/non-learning actions."),
     ("learnbuddy_child_submit_answer", learnbuddy_child_submit_answer, "learnbuddy_child", "Child profile: submit an answer for the current LearnBuddy exercise. No file, terminal, or generic messaging access."),

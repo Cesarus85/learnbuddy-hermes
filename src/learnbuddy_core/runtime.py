@@ -54,6 +54,10 @@ class RuntimePaths:
         return self.data_dir / "plan-state.json"
 
     @property
+    def pending_reminder_state(self) -> Path:
+        return self.data_dir / "pending-reminder-state.json"
+
+    @property
     def state(self) -> Path:
         return self.data_dir / "state.json"
 
@@ -80,6 +84,15 @@ def _same_local_date(timestamp: Any, target: datetime, timezone_name: str) -> bo
 
 def _one_line(value: Any, *, max_len: int = 220) -> str:
     text = " ".join(str(value or "—").split())
+    if len(text) > max_len:
+        return text[: max_len - 1].rstrip() + "…"
+    return text
+
+
+def _compact_prompt(value: Any, *, max_len: int = 900) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "(Aufgabentext fehlt.)"
     if len(text) > max_len:
         return text[: max_len - 1].rstrip() + "…"
     return text
@@ -489,6 +502,117 @@ class LearnBuddyRuntime:
             _write_jsonl(self.paths.scheduled_exercises, rows)
             return row
         return None
+
+    def pending_reminder_plan(
+        self,
+        *,
+        now: str | None = None,
+        timezone_name: str = "Europe/Berlin",
+        mode: str = "child_parent",
+    ) -> dict[str, Any]:
+        """Plan due reminders for the currently pending exercise without sending."""
+        mode = str(mode or "child_parent").replace("-", "_")
+        state = self._state()
+        pending = state.get("pending")
+        if not isinstance(pending, dict):
+            return {"status": "no_pending", "child": None, "parent": None}
+        timestamp = pending.get("timestamp")
+        if not timestamp:
+            return {"status": "pending_without_timestamp", "child": None, "parent": None, "pending": pending}
+        current = _local_datetime(now, timezone_name)
+        started = _local_datetime(str(timestamp), timezone_name)
+        age = current - started
+        if age.total_seconds() < 0:
+            return {"status": "pending_from_future", "child": None, "parent": None, "pending": pending}
+
+        session_id = str(pending.get("id") or pending.get("exercise_id") or "pending")
+        exercise = self._exercise_by_id_or_none(str(pending.get("exercise_id") or "")) or {}
+        reminder_state = self._pending_reminder_state()
+        bucket = self._pending_reminder_bucket(reminder_state, session_id)
+        today = current.date().isoformat()
+        age_hours = age.total_seconds() / 3600
+        child = None
+        parent = None
+
+        if mode in {"child_parent", "child_only"}:
+            sent_stages = {str(item) for item in bucket.get("child_stages_sent", []) if item}
+            if bucket.get("last_child_reminder_date") != today:
+                stage = None
+                if age_hours >= 48 and "48h" not in sent_stages:
+                    stage = "48h"
+                elif age_hours >= 24 and "24h" not in sent_stages:
+                    stage = "24h"
+                if stage:
+                    child = {
+                        "recipient": "child",
+                        "stage": stage,
+                        "text": self._pending_child_reminder_text(stage, pending, exercise),
+                    }
+
+        if mode in {"child_parent", "parent_only"} and age_hours >= 72:
+            parent_notified = bucket.get("parent_notified") if isinstance(bucket.get("parent_notified"), dict) else {}
+            if not parent_notified.get("parent"):
+                parent = {
+                    "recipient": "parent",
+                    "stage": "72h",
+                    "text": self._pending_parent_reminder_text(pending, exercise, age_hours=age_hours, queue_count=len(state.get("queue") or [])),
+                }
+
+        base = {
+            "session_id": session_id,
+            "exercise_id": pending.get("exercise_id"),
+            "age_hours": round(age_hours, 1),
+            "now": current.isoformat(),
+            "child": child,
+            "parent": parent,
+        }
+        if child or parent:
+            return {"status": "due", **base}
+        if bucket.get("last_child_reminder_date") == today and age_hours >= 24:
+            return {"status": "not_due", "reason": "already_reminded_today", **base}
+        if age_hours < 24:
+            return {"status": "not_due", "reason": "pending_too_fresh", **base}
+        return {"status": "not_due", "reason": "stages_already_sent", **base}
+
+    def mark_pending_reminder_sent(
+        self,
+        plan: dict[str, Any],
+        *,
+        child_delivery: dict[str, Any] | None = None,
+        parent_delivery: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist successful reminder deliveries so cron/timers do not duplicate them."""
+        session_id = str(plan.get("session_id") or "")
+        if not session_id:
+            raise ValueError("pending reminder plan requires session_id")
+        reminder_state = self._pending_reminder_state()
+        bucket = self._pending_reminder_bucket(reminder_state, session_id)
+        timestamp = str(plan.get("now") or _now())
+        try:
+            date_text = _local_datetime(timestamp, "Europe/Berlin").date().isoformat()
+        except ValueError:
+            date_text = timestamp[:10]
+
+        if child_delivery and str(child_delivery.get("status") or "") in {"sent", "dry_run"} and isinstance(plan.get("child"), dict):
+            stage = str(plan["child"].get("stage") or "")
+            stages = [str(item) for item in bucket.get("child_stages_sent", []) if item]
+            if stage and stage not in stages:
+                stages.append(stage)
+            bucket["child_stages_sent"] = stages
+            bucket["last_child_reminder_at"] = timestamp
+            bucket["last_child_reminder_date"] = date_text
+            bucket["last_child_delivery"] = child_delivery
+
+        if parent_delivery and str(parent_delivery.get("status") or "") in {"sent", "dry_run"} and isinstance(plan.get("parent"), dict):
+            parent_notified = bucket.setdefault("parent_notified", {})
+            if not isinstance(parent_notified, dict):
+                bucket["parent_notified"] = parent_notified = {}
+            parent_notified["parent"] = timestamp
+            bucket["last_parent_delivery"] = parent_delivery
+
+        reminder_state["updated_at"] = timestamp
+        _write_json(self.paths.pending_reminder_state, reminder_state)
+        return bucket
 
     def mark_pending_delivery(self, delivery_result: dict[str, Any], *, recipient: str = "child") -> dict[str, Any] | None:
         """Persist user-visible delivery metadata for the current pending session."""
@@ -1078,6 +1202,51 @@ class LearnBuddyRuntime:
         prefix = "Dringende Elternhilfe" if request.get("urgent") else "Elternhilfe"
         subject_text = f" in {subject}" if subject else ""
         return f"{self.agent_name}: {prefix} für {self.child_name}{subject_text}: {request.get('reason')}"
+
+    def _pending_reminder_state(self) -> dict[str, Any]:
+        state = _read_json(self.paths.pending_reminder_state, {"sessions": {}})
+        if not isinstance(state, dict):
+            state = {"sessions": {}}
+        sessions = state.get("sessions")
+        if not isinstance(sessions, dict):
+            state["sessions"] = {}
+        return state
+
+    def _pending_reminder_bucket(self, reminder_state: dict[str, Any], session_id: str) -> dict[str, Any]:
+        sessions = reminder_state.setdefault("sessions", {})
+        if not isinstance(sessions, dict):
+            reminder_state["sessions"] = sessions = {}
+        bucket = sessions.setdefault(session_id, {})
+        if not isinstance(bucket, dict):
+            sessions[session_id] = bucket = {}
+        bucket.setdefault("child_stages_sent", [])
+        bucket.setdefault("parent_notified", {})
+        return bucket
+
+    def _pending_child_reminder_text(self, stage: str, pending: dict[str, Any], exercise: dict[str, Any]) -> str:
+        prompt = _compact_prompt(pending.get("prompt") or exercise.get("prompt"))
+        subject = _subject_label(pending.get("subject") or exercise.get("subject"))
+        if stage == "24h":
+            lead = f"Hey {self.child_name} 😊 Du hast noch eine {subject}-Aufgabe offen. Hier ist sie nochmal:"
+            tail = "Schreib einfach deine Antwort. Wenn du Hilfe brauchst, sag kurz Bescheid."
+        else:
+            lead = f"Die {subject}-Aufgabe wartet noch 😊 Hier ist sie nochmal:"
+            tail = "Schreib einfach deine Antwort oder bitte um Hilfe. Kein Stress."
+        return f"{lead}\n\n{prompt}\n\n{tail}"
+
+    def _pending_parent_reminder_text(self, pending: dict[str, Any], exercise: dict[str, Any], *, age_hours: float, queue_count: int) -> str:
+        prompt = _compact_prompt(pending.get("prompt") or exercise.get("prompt"), max_len=1000)
+        days = max(3, int(age_hours // 24))
+        queue_text = f"\nWarteschlange: {queue_count} weitere Aufgabe(n)." if queue_count else ""
+        requested_by = pending.get("requested_by") or pending.get("source") or "unbekannt"
+        return (
+            f"📚 {self.agent_name}: offene Aufgabe für {self.child_name} seit über 72 Stunden\n"
+            f"Von: {requested_by}\n"
+            f"Seit: {pending.get('timestamp') or 'unbekannt'} ({days} Tage)\n"
+            f"Aufgabe:\n{prompt}"
+            f"{queue_text}\n\n"
+            "Optionen: erneut senden, überspringen oder ersetzen."
+        )
 
     def _state(self) -> dict[str, Any]:
         state = _read_json(self.paths.state, {"pending": None, "queue": [], "profile": self._profile()})

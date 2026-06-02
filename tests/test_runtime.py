@@ -418,3 +418,53 @@ def test_runtime_learning_plan_respects_pending_pause_and_daily_goal(tmp_path):
     assert paused["status"] == "plan_paused"
     assert paused["plan"]["id"] == plan["id"]
     assert second["id"] not in [row["exercise_id"] for row in runtime.sessions()]
+
+
+def test_runtime_plans_pending_child_reminder_with_open_prompt(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_name="Alex", agent_name="BuddyBot")
+    exercise = runtime.add_exercise({"subject": "math", "prompt": "Was ist 12 + 8?", "answer": "20"})
+    runtime.open_exercise(exercise["id"], timestamp="2026-05-28T06:00:00+00:00")
+
+    reminder = runtime.pending_reminder_plan(now="2026-05-29T08:30:00+02:00", timezone_name="Europe/Berlin")
+
+    assert reminder["status"] == "due"
+    assert reminder["session_id"] == runtime.status()["pending"]["id"]
+    assert reminder["child"]["stage"] == "24h"
+    assert reminder["child"]["recipient"] == "child"
+    assert "Alex" in reminder["child"]["text"]
+    assert "Mathe" in reminder["child"]["text"]
+    assert "Was ist 12 + 8?" in reminder["child"]["text"]
+    assert reminder["parent"] is None
+
+
+def test_runtime_pending_reminder_records_success_and_escalates_parent_once(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_name="Alex", agent_name="BuddyBot")
+    first = runtime.add_exercise({"subject": "math", "prompt": "Was ist 12 + 8?", "answer": "20"})
+    second = runtime.add_exercise({"subject": "german", "prompt": "Artikel von Baum?", "answer": "der"})
+    runtime.open_exercise(first["id"], timestamp="2026-05-28T06:00:00+00:00")
+    runtime.open_exercise(second["id"], timestamp="2026-05-28T06:05:00+00:00")
+
+    first_plan = runtime.pending_reminder_plan(now="2026-05-29T08:30:00+02:00", timezone_name="Europe/Berlin")
+    runtime.mark_pending_reminder_sent(first_plan, child_delivery={"status": "dry_run", "adapter": "dry_run", "target": "child"})
+    duplicate = runtime.pending_reminder_plan(now="2026-05-29T18:00:00+02:00", timezone_name="Europe/Berlin")
+    second_stage = runtime.pending_reminder_plan(now="2026-05-30T08:30:00+02:00", timezone_name="Europe/Berlin")
+
+    assert duplicate["status"] == "not_due"
+    assert duplicate["reason"] == "already_reminded_today"
+    assert second_stage["status"] == "due"
+    assert second_stage["child"]["stage"] == "48h"
+    runtime.mark_pending_reminder_sent(second_stage, child_delivery={"status": "dry_run", "adapter": "dry_run", "target": "child"})
+
+    escalation = runtime.pending_reminder_plan(now="2026-05-31T08:30:00+02:00", timezone_name="Europe/Berlin")
+    assert escalation["status"] == "due"
+    assert escalation["child"] is None
+    assert escalation["parent"]["stage"] == "72h"
+    assert escalation["parent"]["recipient"] == "parent"
+    assert "Was ist 12 + 8?" in escalation["parent"]["text"]
+    assert "Warteschlange: 1" in escalation["parent"]["text"]
+    runtime.mark_pending_reminder_sent(escalation, parent_delivery={"status": "dry_run", "adapter": "dry_run", "target": "parent"})
+
+    repeated_escalation = runtime.pending_reminder_plan(now="2026-06-01T08:30:00+02:00", timezone_name="Europe/Berlin")
+    assert repeated_escalation["status"] == "not_due"
+    assert repeated_escalation["reason"] == "stages_already_sent"
+    assert (tmp_path / "learnbuddy" / "pending-reminder-state.json").exists()

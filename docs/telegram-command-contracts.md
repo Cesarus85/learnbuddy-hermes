@@ -43,6 +43,15 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 - Rule: scheduler-safe and bounded. It renders one local-week report with started tasks, final answers, attempt history, subject totals, and compact next-week recommendations; respects `heute pausieren`/`pause_today`; skips duplicate sends for the same local week; and skips truly empty weeks unless `include_empty=true`.
 - Installable timer: `scripts/install-weekly-status-timer.sh --config learnbuddy.yaml --python ./.venv/bin/python --enable --start` writes a systemd user timer whose service runs `learnbuddy weekly-status --notify`, typically on Sunday evening.
 
+### Pending exercise reminder
+
+- Parent/operator examples: `Erinnere an die offene Aufgabe`, `Prüfe offene Aufgabe und erinnere bei Bedarf`, `Pending Reminder laufen lassen`
+- Tool: `learnbuddy_pending_reminder`
+- CLI: `learnbuddy pending-reminder --config ./learnbuddy.yaml`
+- Runtime file: `pending-reminder-state.json`
+- Default args: `mode=child_parent`, `dry_run=false`
+- Rule: scheduler-safe and bounded. It never creates a task and never answers for the learner. It only reminds about the existing pending exercise, includes the open prompt in the child reminder, sends child reminders after 24h and 48h at most once per local day, and escalates to the parent after 72h once per pending session. Successful `sent`/`dry_run` deliveries are recorded in `pending-reminder-state.json` to avoid duplicates.
+
 ### Parent automation control
 
 - Parent examples: `heute pausieren`, `Lernbot heute aus`, `weiter`, `Automatik wieder an`

@@ -82,6 +82,7 @@ learnbuddy answer --config ./learnbuddy.yaml "4"
 learnbuddy plan status --config ./learnbuddy.yaml
 learnbuddy daily-status --config ./learnbuddy.yaml --notify
 learnbuddy weekly-status --config ./learnbuddy.yaml --notify
+learnbuddy pending-reminder --config ./learnbuddy.yaml
 learnbuddy report --config ./learnbuddy.yaml --notify
 ```
 

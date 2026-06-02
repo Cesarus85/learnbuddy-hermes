@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path
 
+from learnbuddy_core.runtime import LearnBuddyRuntime
+
 
 def load_plugin():
     path = Path("plugins/learnbuddy-learning/__init__.py")
@@ -555,6 +557,40 @@ delivery:
     assert dispatched["delivery_status"] == "sent"
 
 
+def test_plugin_pending_reminder_sends_due_public_safe_messages(tmp_path):
+    plugin = load_plugin()
+    data_dir = tmp_path / "pending-reminder-plugin"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Alex
+agent:
+  name: BuddyBot
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    runtime = LearnBuddyRuntime(data_dir, child_name="Alex", agent_name="BuddyBot")
+    exercise = runtime.add_exercise({"subject": "math", "prompt": "Was ist 12 + 8?", "answer": "20"})
+    runtime.open_exercise(exercise["id"], timestamp="2026-05-28T06:00:00+00:00")
+
+    result = json.loads(plugin.learnbuddy_pending_reminder({"config_path": str(config_path), "now": "2026-05-31T08:30:00+02:00"}))
+
+    assert result["status"] == "sent"
+    assert result["plan"]["child"]["stage"] == "48h"
+    assert result["plan"]["parent"]["stage"] == "72h"
+    assert "Was ist 12 + 8?" in result["plan"]["child"]["text"]
+    assert "Was ist 12 + 8?" in result["plan"]["parent"]["text"]
+    assert result["child_delivery"]["status"] == "dry_run"
+    assert result["parent_delivery"]["status"] == "dry_run"
+    assert any(tool[0] == "learnbuddy_pending_reminder" and tool[2] == "learnbuddy_learning" for tool in plugin.TOOLS)
+    assert not any(tool[0] == "learnbuddy_pending_reminder" and tool[2] == "learnbuddy_child" for tool in plugin.TOOLS)
+
+
 def test_plugin_loads_default_env_file_before_delivery(tmp_path, monkeypatch):
     plugin = load_plugin()
     data_dir = tmp_path / "env-file-data"
@@ -639,6 +675,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
         "learnbuddy_parent_report",
         "learnbuddy_daily_parent_status",
         "learnbuddy_weekly_parent_status",
+        "learnbuddy_pending_reminder",
         "learnbuddy_parent_automation_control",
         "learnbuddy_parent_help_request",
         "learnbuddy_child_submit_answer",
@@ -717,6 +754,7 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert report_schema["properties"]["notify"]["default"] is False
     daily_schema = ctx.tools["learnbuddy_daily_parent_status"]["schema"]["parameters"]
     weekly_schema = ctx.tools["learnbuddy_weekly_parent_status"]["schema"]["parameters"]
+    reminder_schema = ctx.tools["learnbuddy_pending_reminder"]["schema"]["parameters"]
     automation_schema = ctx.tools["learnbuddy_parent_automation_control"]["schema"]["parameters"]
     assert daily_schema["properties"]["notify"]["default"] is False
     assert daily_schema["properties"]["include_empty"]["default"] is False
@@ -724,6 +762,11 @@ def test_registered_tools_expose_guided_parent_command_schemas():
     assert weekly_schema["properties"]["include_empty"]["default"] is False
     assert ctx.tools["learnbuddy_weekly_parent_status"]["toolset"] == "learnbuddy_learning"
     assert "weekly parent report" in ctx.tools["learnbuddy_weekly_parent_status"]["schema"]["description"].lower()
+    assert ctx.tools["learnbuddy_pending_reminder"]["toolset"] == "learnbuddy_learning"
+    assert reminder_schema["additionalProperties"] is False
+    assert reminder_schema["properties"]["mode"]["enum"] == ["child_parent", "child_only", "parent_only"]
+    assert reminder_schema["properties"]["dry_run"]["default"] is False
+    assert "pending exercise reminder" in ctx.tools["learnbuddy_pending_reminder"]["schema"]["description"].lower()
     assert automation_schema["required"] == ["action"]
     assert automation_schema["properties"]["action"]["enum"] == ["status", "pause_today", "resume"]
 
@@ -756,7 +799,7 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
 
     assert contracts["status"] == "ok"
     operations = {item["operation"]: item for item in contracts["contracts"]}
-    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "weekly_status", "automation_control", "resend_pending", "dispatch_plan", "learning_plan", "material_review", "create_and_send_exercise", "schedule_exercise"}
+    assert set(operations) == {"current_status", "answer_status", "report", "daily_status", "weekly_status", "pending_reminder", "automation_control", "resend_pending", "dispatch_plan", "learning_plan", "material_review", "create_and_send_exercise", "schedule_exercise"}
     assert operations["current_status"]["tool"] == "learnbuddy_learning_status"
     assert "Was ist offen?" in operations["current_status"]["examples"]
     assert operations["answer_status"]["tool"] == "learnbuddy_parent_answer_status"
@@ -769,6 +812,9 @@ def test_parent_command_contracts_cover_parent_telegram_operations():
     assert operations["weekly_status"]["tool"] == "learnbuddy_weekly_parent_status"
     assert operations["weekly_status"]["policy_bounded"] is True
     assert "Wochenbericht" in operations["weekly_status"]["examples"]
+    assert operations["pending_reminder"]["tool"] == "learnbuddy_pending_reminder"
+    assert operations["pending_reminder"]["policy_bounded"] is True
+    assert "offene Aufgabe" in operations["pending_reminder"]["examples"][0]
     assert operations["automation_control"]["tool"] == "learnbuddy_parent_automation_control"
     assert "heute pausieren" in operations["automation_control"]["examples"]
     assert operations["resend_pending"]["tool"] == "learnbuddy_deliver_pending_exercise"
@@ -816,12 +862,13 @@ delivery:
         "prompt": "3 + 5?",
         "answer": "8",
     }))
-    plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": queued["exercise"]["id"]})
-    plugin.learnbuddy_submit_answer({"config_path": str(config_path), "answer": "8"})
+    plugin.learnbuddy_next_exercise({"config_path": str(config_path), "exercise_id": queued["exercise"]["id"], "now": "2026-05-27T09:00:00+02:00"})
+    plugin.learnbuddy_submit_answer({"config_path": str(config_path), "answer": "8", "now": "2026-05-27T09:05:00+02:00"})
 
     first = json.loads(plugin.learnbuddy_daily_parent_status({
         "config_path": str(config_path),
         "notify": True,
+        "now": "2026-05-27T21:00:00+02:00",
     }))
     weekly = json.loads(plugin.learnbuddy_weekly_parent_status({
         "config_path": str(config_path),
@@ -836,6 +883,7 @@ delivery:
     duplicate = json.loads(plugin.learnbuddy_daily_parent_status({
         "config_path": str(config_path),
         "notify": True,
+        "now": "2026-05-27T22:00:00+02:00",
     }))
     paused = json.loads(plugin.learnbuddy_parent_automation_control({
         "config_path": str(config_path),

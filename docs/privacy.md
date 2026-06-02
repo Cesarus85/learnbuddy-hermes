@@ -22,6 +22,8 @@ The local runtime currently uses JSON/JSONL files for:
 - parent help requests
 - parent-scheduled exercises and their dispatch status
 - learning plans and active plan state (`plans.jsonl`, `plan-state.json`)
+- parent-supplied material review state (`material-sets.jsonl`)
+- pending-reminder markers for open exercises (`pending-reminder-state.json`)
 
 These files are acceptable for alpha because they are easy to inspect and backup. They are also private family data once real content is used.
 

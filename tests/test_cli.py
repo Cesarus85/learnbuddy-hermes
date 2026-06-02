@@ -2,6 +2,7 @@ import json
 import sys
 
 from learnbuddy_core.cli import main
+from learnbuddy_core.runtime import LearnBuddyRuntime
 
 
 def test_doctor_runs(capsys):
@@ -914,9 +915,9 @@ delivery:
     )
     assert main(["queue", "--config", str(config_path), "--subject", "math", "--prompt", "8 + 1?", "--answer", "9"]) == 0
     exercise_id = json.loads(capsys.readouterr().out)["exercise"]["id"]
-    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id]) == 0
+    assert main(["next", "--config", str(config_path), "--exercise-id", exercise_id, "--now", "2026-05-27T09:00:00+02:00"]) == 0
     capsys.readouterr()
-    assert main(["answer", "--config", str(config_path), "3"]) == 0
+    assert main(["answer", "--config", str(config_path), "3", "--now", "2026-05-27T09:05:00+02:00"]) == 0
     capsys.readouterr()
 
     assert main(["weekly-status", "--config", str(config_path), "--notify", "--now", "2026-05-31T19:00:00+02:00"]) == 0
@@ -1076,6 +1077,7 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
         "--candidate", "10 + 5?",
     ]) == 0
     capsys.readouterr()
+    (data_dir / "pending-reminder-state.json").write_text('{"sessions": {"sess-demo": {"child_stages_sent": ["24h"]}}}\n', encoding="utf-8")
 
     assert main(["backup", "--data-dir", str(data_dir), "--output", str(archive_path)]) == 0
     backup = json.loads(capsys.readouterr().out)
@@ -1092,6 +1094,7 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
         "plans.jsonl",
         "plan-state.json",
         "material-sets.jsonl",
+        "pending-reminder-state.json",
     }
 
     assert main(["restore", "--archive", str(archive_path), "--data-dir", str(restore_dir)]) == 0
@@ -1104,6 +1107,7 @@ def test_cli_backup_and_restore_round_trip_runtime_data(capsys, tmp_path):
     assert (restore_dir / "plans.jsonl").read_text(encoding="utf-8") == (data_dir / "plans.jsonl").read_text(encoding="utf-8")
     assert (restore_dir / "plan-state.json").read_text(encoding="utf-8") == (data_dir / "plan-state.json").read_text(encoding="utf-8")
     assert (restore_dir / "material-sets.jsonl").read_text(encoding="utf-8") == (data_dir / "material-sets.jsonl").read_text(encoding="utf-8")
+    assert (restore_dir / "pending-reminder-state.json").read_text(encoding="utf-8") == (data_dir / "pending-reminder-state.json").read_text(encoding="utf-8")
 
 
 def test_cli_learning_plan_create_status_control_and_dispatch(capsys, tmp_path):
@@ -1185,3 +1189,36 @@ def test_cli_restore_refuses_to_overwrite_existing_data_without_force(capsys, tm
     assert result["status"] == "exists"
     assert "use --force" in result["error"]
     assert (restore_dir / "state.json").read_text(encoding="utf-8") == '{"pending": "keep"}\n'
+
+
+def test_cli_pending_reminder_sends_due_child_and_parent_reminders(capsys, tmp_path):
+    data_dir = tmp_path / "learnbuddy-data"
+    config_path = tmp_path / "learnbuddy.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  data_dir: {data_dir}
+child:
+  display_name: Alex
+agent:
+  name: BuddyBot
+delivery:
+  mode: dry_run
+""".strip(),
+        encoding="utf-8",
+    )
+    runtime = LearnBuddyRuntime(data_dir, child_name="Alex", agent_name="BuddyBot")
+    exercise = runtime.add_exercise({"subject": "math", "prompt": "Was ist 12 + 8?", "answer": "20"})
+    runtime.open_exercise(exercise["id"], timestamp="2026-05-28T06:00:00+00:00")
+
+    assert main(["pending-reminder", "--config", str(config_path), "--now", "2026-05-31T08:30:00+02:00"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["status"] == "sent"
+    assert result["plan"]["child"]["stage"] == "48h"
+    assert result["plan"]["parent"]["stage"] == "72h"
+    assert "Was ist 12 + 8?" in result["plan"]["child"]["text"]
+    assert "Was ist 12 + 8?" in result["plan"]["parent"]["text"]
+    assert result["child_delivery"]["status"] == "dry_run"
+    assert result["parent_delivery"]["status"] == "dry_run"
+    assert (data_dir / "pending-reminder-state.json").exists()

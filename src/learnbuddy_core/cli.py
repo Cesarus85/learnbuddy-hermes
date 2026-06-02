@@ -15,6 +15,7 @@ from .exercise_packs import DEFAULT_PACK, available_packs, import_exercise_pack
 from .maintenance import backup_runtime_data, create_setup, restore_runtime_data
 from .material_import import build_material_from_file
 from .notifier import ParentNotifier
+from .pending_reminders import run_pending_reminder
 from .runtime import LearnBuddyRuntime
 from .telegram_answer_watcher import load_env_file, process_child_telegram_answers
 
@@ -261,6 +262,7 @@ def cmd_next(args: argparse.Namespace) -> int:
         subject=args.subject,
         mode=args.mode,
         requested_by=args.requested_by,
+        timestamp=args.now,
     )
     if args.deliver and result.get("status") == "opened":
         delivery_result = _deliver_pending_child_prompt(config, runtime, force=True)
@@ -343,7 +345,7 @@ def cmd_dispatch_plan(args: argparse.Namespace) -> int:
 
 def cmd_answer(args: argparse.Namespace) -> int:
     runtime = _runtime_from_args(args)
-    _print_json(runtime.submit_answer(args.answer, input_mode=args.input_mode))
+    _print_json(runtime.submit_answer(args.answer, input_mode=args.input_mode, timestamp=args.now))
     return 0
 
 
@@ -455,6 +457,21 @@ def cmd_weekly_status(args: argparse.Namespace) -> int:
     )
     _print_json(result)
     return 0
+
+
+def cmd_pending_reminder(args: argparse.Namespace) -> int:
+    load_env_file(args.env_file or os.getenv("LEARNBUDDY_ENV_FILE"))
+    config = _config_from_args(args)
+    runtime = _runtime_from_args(args, config)
+    result = run_pending_reminder(
+        config,
+        runtime,
+        mode=args.mode,
+        now=args.now,
+        dry_run=args.dry_run,
+    )
+    _print_json(result)
+    return 0 if result.get("status") not in {"error", "not_configured"} else 1
 
 
 def cmd_automation(args: argparse.Namespace) -> int:
@@ -611,6 +628,7 @@ def build_parser() -> argparse.ArgumentParser:
     next_exercise.add_argument("--subject")
     next_exercise.add_argument("--mode", default="manual")
     next_exercise.add_argument("--requested-by", default="parent")
+    next_exercise.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
     next_exercise.add_argument("--deliver", action="store_true")
     next_exercise.set_defaults(func=cmd_next)
 
@@ -630,6 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_runtime_options(answer)
     answer.add_argument("answer")
     answer.add_argument("--input-mode", default="text")
+    answer.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
     answer.set_defaults(func=cmd_answer)
 
     status = sub.add_parser("status", help="show pending and queue state")
@@ -656,6 +675,14 @@ def build_parser() -> argparse.ArgumentParser:
     weekly_status.add_argument("--force", action="store_true", help="ignore the once-per-week send guard")
     weekly_status.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
     weekly_status.set_defaults(func=cmd_weekly_status)
+
+    pending_reminder = sub.add_parser("pending-reminder", help="send due reminders for the current pending exercise")
+    _add_runtime_options(pending_reminder)
+    pending_reminder.add_argument("--mode", choices=["child_parent", "child_only", "parent_only"], default="child_parent")
+    pending_reminder.add_argument("--now", help="ISO timestamp override for tests or controlled scheduler runs")
+    pending_reminder.add_argument("--dry-run", action="store_true", help="plan reminders without delivery or state writes")
+    pending_reminder.add_argument("--env-file", help="optional KEY=VALUE file for delivery secrets")
+    pending_reminder.set_defaults(func=cmd_pending_reminder)
 
     automation = sub.add_parser("automation", help="inspect or control parent-facing scheduled automation")
     _add_runtime_options(automation)
