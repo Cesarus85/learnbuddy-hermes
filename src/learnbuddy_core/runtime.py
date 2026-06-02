@@ -701,8 +701,11 @@ class LearnBuddyRuntime:
             subject=str(exercise.get("subject") or pending.get("subject") or ""),
             previous_attempts=int(pending.get("attempts", 0)),
             max_attempts=self.max_attempts,
+            previous_item_results=pending.get("item_results") if isinstance(pending.get("item_results"), list) else None,
         )
         pending["attempts"] = evaluation.attempts
+        if isinstance(evaluation.metadata.get("item_results"), list):
+            pending["item_results"] = evaluation.metadata["item_results"]
         result = "correct" if evaluation.correct else "exhausted" if evaluation.exhausted else "retry"
         answer_row = {
             "timestamp": timestamp or _now(),

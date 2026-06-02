@@ -261,6 +261,32 @@ def test_runtime_grades_parent_created_multi_math_batch(tmp_path):
     assert runtime.status()["pending"] is None
 
 
+def test_runtime_keeps_multi_part_progress_and_accepts_only_remaining_answer(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", max_attempts=3)
+    exercise = runtime.add_exercise({
+        "subject": "math",
+        "type": "calculation_batch",
+        "prompt": "Rechne bitte:\n1) 1 + 1 = ?\n2) 2 + 2 = ?\n3) 3 + 3 = ?\n4) 4 + 4 = ?",
+        "expected_answers": ["2", "4", "6", "8"],
+    })
+
+    runtime.open_exercise(exercise["id"])
+    first = runtime.submit_answer("1) 2 2) 4 3) 6 4) 7")
+
+    assert first["result"] == "retry"
+    assert first["metadata"]["score"] == 3
+    assert "Nr. 4" in first["feedback"]
+
+    corrected = runtime.submit_answer("8")
+
+    assert corrected["result"] == "correct"
+    assert corrected["correct"] is True
+    assert corrected["metadata"]["score"] == 4
+    assert corrected["metadata"]["total"] == 4
+    assert corrected["metadata"]["item_results"][3]["correct"] is True
+    assert runtime.status()["pending"] is None
+
+
 def test_runtime_records_parent_help_requests(tmp_path):
     runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", child_id="kid-help", child_name="Alex", agent_name="BuddyBot")
 

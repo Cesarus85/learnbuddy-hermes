@@ -85,6 +85,17 @@ def _ordered_number_answers(text: Any) -> list[str]:
     return [_norm_number(value) for value in values if _norm_number(value)]
 
 
+def _ordered_number_answer_pairs(text: Any) -> list[tuple[int, str]]:
+    raw = unicodedata.normalize("NFKC", "" if text is None else str(text))
+    pairs = re.findall(r"(?:^|\s)(\d{1,2})\s*[\.):]\s*(-?\d+(?:[,.]\d+)?)", raw)
+    out: list[tuple[int, str]] = []
+    for index, value in pairs:
+        normalized = _norm_number(value)
+        if normalized:
+            out.append((int(index), normalized))
+    return out
+
+
 def _ordered_text_answers(text: Any) -> list[str]:
     raw = " ".join(("" if text is None else str(text)).split())
     numbered = re.findall(r"(?:^|\s)\d{1,2}\s*[\.):]\s*(.*?)(?=(?:\s+\d{1,2}\s*[\.):]\s*)|$)", raw)
@@ -94,6 +105,17 @@ def _ordered_text_answers(text: Any) -> list[str]:
     if len(split_parts) > 1:
         return [normalize_answer(part) for part in split_parts if normalize_answer(part)]
     return [normalize_answer(raw)] if normalize_answer(raw) else []
+
+
+def _ordered_text_answer_pairs(text: Any) -> list[tuple[int, str]]:
+    raw = " ".join(("" if text is None else str(text)).split())
+    pairs = re.findall(r"(?:^|\s)(\d{1,2})\s*[\.):]\s*(.*?)(?=(?:\s+\d{1,2}\s*[\.):]\s*)|$)", raw)
+    out: list[tuple[int, str]] = []
+    for index, value in pairs:
+        normalized = normalize_answer(value)
+        if normalized:
+            out.append((int(index), normalized))
+    return out
 
 
 def _ordered_expected(answer: Any = None, expected_answers: Iterable[Any] | None = None, *, prompt: str | None = None, exercise_type: str | None = None) -> list[Any]:
@@ -131,20 +153,61 @@ def _evaluate_ordered_answer(
     *,
     previous_attempts: int,
     max_attempts: int,
+    previous_item_results: Iterable[dict[str, Any]] | None = None,
 ) -> Evaluation:
     attempts = previous_attempts + 1
     expected_numbers = [_norm_number(value) for value in expected]
     numeric = bool(expected_numbers) and all(expected_numbers)
     if numeric:
+        explicit_pairs = _ordered_number_answer_pairs(user_answer)
         given = _ordered_number_answers(user_answer)
         expected_norm = expected_numbers
     else:
+        explicit_pairs = _ordered_text_answer_pairs(user_answer)
         given = _ordered_text_answers(user_answer)
         expected_norm = [normalize_answer(value) for value in expected]
-    item_results: list[dict[str, Any]] = []
+
+    previous_correct: dict[int, dict[str, Any]] = {}
+    for row in previous_item_results or []:
+        if not isinstance(row, dict) or row.get("correct") is not True:
+            continue
+        raw_index = row.get("index")
+        if raw_index is None:
+            continue
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= index <= len(expected_norm):
+            continue
+        previous_correct[index] = {
+            "index": index,
+            "given": str(row.get("given") or ""),
+            "expected": expected_norm[index - 1],
+            "correct": True,
+        }
+
+    item_results: list[dict[str, Any]] = [
+        previous_correct.get(index, {"index": index, "given": "", "expected": exp, "correct": False})
+        for index, exp in enumerate(expected_norm, 1)
+    ]
+    explicit = {index: value for index, value in explicit_pairs if 1 <= index <= len(expected_norm)}
+    open_indices = [index for index in range(1, len(expected_norm) + 1) if index not in previous_correct]
+    assignments: dict[int, str] = {}
+    if explicit:
+        assignments = explicit
+    elif given:
+        if previous_correct and len(given) != len(expected_norm):
+            targets = open_indices
+        else:
+            targets = list(range(1, len(expected_norm) + 1))
+        assignments = {index: got for index, got in zip(targets, given)}
+
     for index, exp in enumerate(expected_norm, 1):
-        got = given[index - 1] if index - 1 < len(given) else ""
-        item_results.append({"index": index, "given": got, "expected": exp, "correct": bool(got and got == exp)})
+        if index not in assignments:
+            continue
+        got = assignments[index]
+        item_results[index - 1] = {"index": index, "given": got, "expected": exp, "correct": bool(got and got == exp)}
     correct_count = sum(1 for row in item_results if row["correct"])
     total = len(expected_norm)
     correct = bool(total and correct_count == total)
@@ -175,14 +238,27 @@ def evaluate_answer(
     subject: str | None = None,
     previous_attempts: int = 0,
     max_attempts: int = 3,
+    previous_item_results: Iterable[dict[str, Any]] | None = None,
 ) -> Evaluation:
     """Evaluate a single short-answer exercise and compute attempt state."""
     if max_attempts < 1:
         raise ValueError("max_attempts must be >= 1")
     attempts = previous_attempts + 1
     ordered_expected = _ordered_expected(answer, expected_answers, prompt=prompt, exercise_type=exercise_type)
-    if ordered_expected and (exercise_type in {"calculation_batch", "batch"} or _looks_like_multi_part_prompt(prompt) or len(_ordered_number_answers(user_answer)) > 1 or len(_ordered_text_answers(user_answer)) > 1):
-        return _evaluate_ordered_answer(user_answer, ordered_expected, previous_attempts=previous_attempts, max_attempts=max_attempts)
+    if ordered_expected and (
+        previous_item_results
+        or exercise_type in {"calculation_batch", "batch"}
+        or _looks_like_multi_part_prompt(prompt)
+        or len(_ordered_number_answers(user_answer)) > 1
+        or len(_ordered_text_answers(user_answer)) > 1
+    ):
+        return _evaluate_ordered_answer(
+            user_answer,
+            ordered_expected,
+            previous_attempts=previous_attempts,
+            max_attempts=max_attempts,
+            previous_item_results=previous_item_results,
+        )
 
     accepted = answer_variants(answer, expected_answers, aliases)
     normalized = normalize_answer(user_answer)
