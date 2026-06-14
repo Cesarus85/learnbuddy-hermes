@@ -217,6 +217,45 @@ def test_runtime_tracks_pending_child_delivery_status(tmp_path):
 
 
 
+def test_runtime_accepts_legacy_json_encoded_expected_answer_payload(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", max_attempts=3)
+    exercise = runtime.add_exercise({
+        "subject": "english",
+        "type": "short",
+        "prompt": "was heißt „schießen“ auf Englisch?",
+        "answer": '{"expected": ["to shoot", "shoot", "to kick", "kick"], "note": "contextual"}',
+    })
+
+    runtime.open_exercise(exercise["id"])
+    result = runtime.submit_answer("shoot")
+
+    assert result["result"] == "correct"
+    assert result["correct"] is True
+    assert result["answer_record"]["expected"] == "to shoot"
+    assert runtime.status()["pending"] is None
+
+
+def test_runtime_accepts_bare_and_to_infinitive_for_english_verb_vocab(tmp_path):
+    runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", max_attempts=3)
+    first = runtime.add_exercise({
+        "subject": "english",
+        "type": "short",
+        "prompt": "was heißt „schießen“ auf Englisch?",
+        "answer": "to shoot",
+    })
+    second = runtime.add_exercise({
+        "subject": "english",
+        "type": "short",
+        "prompt": "was heißt „schießen“ auf Englisch?",
+        "answer": "shoot",
+    })
+
+    runtime.open_exercise(first["id"])
+    assert runtime.submit_answer("shoot")["result"] == "correct"
+    runtime.open_exercise(second["id"])
+    assert runtime.submit_answer("to shoot")["result"] == "correct"
+
+
 def test_runtime_parent_report_uses_synthetic_sessions_and_answers(tmp_path):
     runtime = LearnBuddyRuntime(tmp_path / "learnbuddy", max_attempts=3, child_name="Alex", agent_name="BuddyBot")
     first = runtime.add_exercise({"subject": "math", "prompt": "3 + 4?", "answer": "7"})

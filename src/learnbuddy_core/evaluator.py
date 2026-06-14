@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Iterable, Any
+import json
 import re
 import unicodedata
 
@@ -34,18 +35,75 @@ def normalize_answer(value: Any) -> str:
     return text
 
 
-def answer_variants(answer: Any = None, expected_answers: Iterable[Any] | None = None, aliases: Iterable[Any] | None = None) -> list[str]:
+def _json_expected_payload(value: Any) -> dict[str, Any] | None:
+    """Parse legacy JSON-encoded answer payloads such as {"expected": [...]}.
+
+    Some parent-created exercises accidentally stored the expected-answer object as
+    a JSON string in ``answer``. Treat that as data, not as the literal answer.
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _flatten_expected_items(value: Any) -> list[Any]:
+    payload = _json_expected_payload(value)
+    if payload is not None:
+        for key in ("expected", "expected_answers", "answers", "aliases"):
+            nested = payload.get(key)
+            if nested is not None:
+                return _flatten_expected_items(nested)
+        if payload.get("answer") is not None:
+            return _flatten_expected_items(payload.get("answer"))
+        return []
+    if isinstance(value, dict):
+        for key in ("expected", "expected_answers", "answers", "aliases", "answer"):
+            nested = value.get(key)
+            if nested is not None:
+                return _flatten_expected_items(nested)
+        return []
+    if isinstance(value, (list, tuple, set)):
+        out: list[Any] = []
+        for item in value:
+            out.extend(_flatten_expected_items(item))
+        return out
+    return [value] if value is not None else []
+
+
+def _expand_english_infinitive_variants(variants: list[str], *, subject: str | None = None, prompt: str | None = None) -> list[str]:
+    """Accept both bare verb and ``to`` infinitive for English vocab prompts."""
+    text = f"{subject or ''} {prompt or ''}".casefold()
+    if "english" not in text and "englisch" not in text:
+        return variants
+    out = list(variants)
+    seen = set(out)
+    for item in variants:
+        if item.startswith("to ") and len(item) > 3:
+            bare = item[3:].strip()
+            if bare and bare not in seen:
+                seen.add(bare)
+                out.append(bare)
+        else:
+            with_to = f"to {item}".strip()
+            if re.fullmatch(r"[a-z][a-z' -]*", item) and with_to not in seen:
+                seen.add(with_to)
+                out.append(with_to)
+    return out
+
+
+def answer_variants(answer: Any = None, expected_answers: Iterable[Any] | None = None, aliases: Iterable[Any] | None = None, *, subject: str | None = None, prompt: str | None = None) -> list[str]:
     """Return normalized accepted answer variants, preserving order."""
     raw: list[Any] = []
-    if answer is not None:
-        if isinstance(answer, (list, tuple, set)):
-            raw.extend(answer)
-        else:
-            raw.append(answer)
-    if expected_answers:
-        raw.extend(expected_answers)
-    if aliases:
-        raw.extend(aliases)
+    raw.extend(_flatten_expected_items(answer))
+    raw.extend(_flatten_expected_items(expected_answers))
+    raw.extend(_flatten_expected_items(aliases))
     seen: set[str] = set()
     out: list[str] = []
     for item in raw:
@@ -53,18 +111,15 @@ def answer_variants(answer: Any = None, expected_answers: Iterable[Any] | None =
         if n and n not in seen:
             seen.add(n)
             out.append(n)
-    return out
+    return _expand_english_infinitive_variants(out, subject=subject, prompt=prompt)
 
 
 def canonical_answer(answer: Any = None, expected_answers: Iterable[Any] | None = None) -> str | None:
     """Return the human-facing canonical answer for final feedback."""
-    if answer is not None and not isinstance(answer, (list, tuple, set)):
-        return str(answer)
-    if isinstance(answer, (list, tuple)) and answer:
-        return str(answer[0])
-    if expected_answers:
-        for item in expected_answers:
-            return str(item)
+    for item in _flatten_expected_items(answer):
+        return str(item)
+    for item in _flatten_expected_items(expected_answers):
+        return str(item)
     return None
 
 
@@ -260,7 +315,7 @@ def evaluate_answer(
             previous_item_results=previous_item_results,
         )
 
-    accepted = answer_variants(answer, expected_answers, aliases)
+    accepted = answer_variants(answer, expected_answers, aliases, subject=subject, prompt=prompt)
     normalized = normalize_answer(user_answer)
     correct = bool(normalized and normalized in accepted)
     exhausted = bool((not correct) and attempts >= max_attempts)
