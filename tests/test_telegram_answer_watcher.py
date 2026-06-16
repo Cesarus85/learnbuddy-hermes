@@ -54,6 +54,103 @@ def test_telegram_answer_watcher_processes_child_answer_and_notifies(tmp_path, m
     assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 12
 
 
+def test_telegram_answer_watcher_does_not_count_off_topic_chat_as_batch_answer(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+        parent_telegram_bot_token_env="PARENT_BOT",
+        parent_telegram_chat_id_env="PARENT_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    monkeypatch.setenv("PARENT_BOT", "parent-secret-token")
+    monkeypatch.setenv("PARENT_CHAT", "456")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+    exercise = runtime.add_exercise({
+        "subject": "english",
+        "type": "batch",
+        "prompt": "Übersetze bitte ins Englische. Schreib deine Antworten nummeriert 1–5. 1. etwas sehr gerne tun 2. tun 3. auch 4. also, daher 5. Spaß machen",
+        "expected_answers": ["to enjoy sth. very much", "do", "too", "so", "be fun"],
+    })
+    opened = runtime.open_exercise(exercise["id"])
+    pending_ts = int(datetime.fromisoformat(opened["session"]["timestamp"]).timestamp())
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 12, "message": {"message_id": 3, "date": pending_ts + 1, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "Ich möchte meinen Hasen beibringen auf Toilette zu gehen. Wie viele Köttelchen machen Hasen?"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(config, state_file=tmp_path / "watch.json", transport=fake_transport)
+
+    assert result["status"] == "off_topic"
+    assert result["child_delivery"]["status"] == "dry_run"
+    assert result["child_delivery"]["metadata"]["kind"] == "off_topic_not_counted"
+    assert "zähle ich nicht" in result["child_delivery"]["text"]
+    assert result["parent_delivery"] is None
+    assert runtime.status()["pending"]["exercise_id"] == exercise["id"]
+    assert runtime.status()["pending"]["attempts"] == 0
+    assert runtime.status()["pending"].get("item_results") is None
+    assert runtime.parent_report()["answers"] == 0
+    assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 13
+
+
+def test_telegram_answer_watcher_accepts_unreplied_batch_answer_when_format_matches(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+        parent_telegram_bot_token_env="PARENT_BOT",
+        parent_telegram_chat_id_env="PARENT_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    monkeypatch.setenv("PARENT_BOT", "parent-secret-token")
+    monkeypatch.setenv("PARENT_CHAT", "456")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+    exercise = runtime.add_exercise({
+        "subject": "english",
+        "type": "batch",
+        "prompt": "Übersetze bitte ins Englische. Schreib deine Antworten nummeriert 1–5. 1. etwas sehr gerne tun 2. tun 3. auch 4. also, daher 5. Spaß machen",
+        "expected_answers": ["to enjoy sth. very much", "do", "too", "so", "be fun"],
+    })
+    opened = runtime.open_exercise(exercise["id"])
+    pending_ts = int(datetime.fromisoformat(opened["session"]["timestamp"]).timestamp())
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 13, "message": {"message_id": 4, "date": pending_ts + 1, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "1. to enjoy sth. very much 2. do 3. too 4. so 5. be fun"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(config, state_file=tmp_path / "watch.json", transport=fake_transport)
+
+    assert result["status"] == "processed"
+    assert result["result"] == "correct"
+    assert result["correct"] is True
+    assert runtime.status()["pending"] is None
+    assert runtime.parent_report()["answers"] == 1
+
+
 def test_telegram_answer_watcher_delivers_promoted_queued_exercise_after_correct_answer(tmp_path, monkeypatch):
     data_dir = tmp_path / "runtime"
     config = LearnBuddyConfig(

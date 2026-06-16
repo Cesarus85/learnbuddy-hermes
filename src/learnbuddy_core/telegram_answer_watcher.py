@@ -13,6 +13,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -142,6 +143,31 @@ def process_child_telegram_answers(
     if not isinstance(pending, dict):
         _advance_offset(watch_state_path, watch_state, updates, minimum_next=int(candidate["update_id"]) + 1)
         return {"status": "no_pending", "update_id": candidate["update_id"], "message_id": message.get("message_id")}
+
+    exercise = _pending_exercise(runtime, pending)
+    answer_gate = _answer_acceptance_for_message(pending, exercise, message, answer_text)
+    if not answer_gate["accept"]:
+        child_delivery = None
+        if send_feedback:
+            metadata = {"kind": "off_topic_not_counted", "session_id": pending.get("id"), "reason": answer_gate.get("reason")}
+            feedback_text = _off_topic_feedback(config, pending, exercise, answer_gate)
+            child_delivery = _with_metadata(
+                delivery_adapter_from_config(config, recipient="child").deliver_child(
+                    DeliveryMessage(text=feedback_text, metadata=metadata)
+                ).to_dict(),
+                metadata,
+                text=feedback_text,
+            )
+        _advance_offset(watch_state_path, watch_state, updates, minimum_next=int(candidate["update_id"]) + 1)
+        return {
+            "status": "off_topic",
+            "update_id": candidate["update_id"],
+            "message_id": message.get("message_id"),
+            "reason": answer_gate.get("reason"),
+            "child_delivery": child_delivery,
+            "parent_delivery": None,
+        }
+
     result = runtime.submit_answer(answer_text, input_mode="text")
     promoted_session = result.get("promoted_session") if isinstance(result.get("promoted_session"), dict) else None
     child_delivery = None
@@ -218,6 +244,174 @@ def _deliver_pending_child_prompt_if_needed(config: LearnBuddyConfig, runtime: L
     ).to_dict()
     runtime.mark_pending_delivery(result)
     return result
+
+
+def _pending_exercise(runtime: LearnBuddyRuntime, pending: dict[str, Any]) -> dict[str, Any]:
+    exercise_id = str(pending.get("exercise_id") or "")
+    for exercise in runtime.exercises():
+        if str(exercise.get("id") or "") == exercise_id:
+            return exercise
+    return {}
+
+
+def _answer_acceptance_for_message(
+    pending: dict[str, Any],
+    exercise: dict[str, Any],
+    message: dict[str, Any],
+    answer_text: str,
+) -> dict[str, Any]:
+    """Decide whether a child chat message should consume a learning attempt.
+
+    Telegram is both the answer channel and the ordinary child chat. Without this
+    gate every post-prompt message becomes an answer attempt, including off-topic
+    questions. Keep the rules deterministic and conservative: explicit replies to
+    the task are accepted; otherwise structured exercises must look structured,
+    and short-answer exercises reject obvious free-form chat/questions.
+    """
+    text = str(answer_text or "").strip()
+    if not text:
+        return {"accept": False, "reason": "empty"}
+    if _is_reply_to_pending_prompt(message, pending):
+        return {"accept": True, "reason": "reply_to_prompt"}
+    if _requires_structured_answer(pending, exercise):
+        return _structured_answer_acceptance(pending, exercise, text)
+    if _looks_like_non_answer_chat(text):
+        return {"accept": False, "reason": "looks_like_chat"}
+    return {"accept": True, "reason": "short_answer_candidate"}
+
+
+def _is_reply_to_pending_prompt(message: dict[str, Any], pending: dict[str, Any]) -> bool:
+    reply = message.get("reply_to_message")
+    if not isinstance(reply, dict):
+        return False
+    raw_delivery = pending.get("delivery")
+    delivery = raw_delivery if isinstance(raw_delivery, dict) else {}
+    raw_child = delivery.get("child")
+    child_delivery = raw_child if isinstance(raw_child, dict) else {}
+    pending_message_id = child_delivery.get("message_id")
+    if pending_message_id is not None and str(reply.get("message_id")) == str(pending_message_id):
+        return True
+    # Fallback for tests/dry-run/manual re-sends where Telegram's message id was
+    # not persisted but the reply payload still contains the task text.
+    prompt_words = _word_set(str(pending.get("prompt") or ""))
+    reply_words = _word_set(str(reply.get("text") or ""))
+    return bool(prompt_words and len(prompt_words & reply_words) >= min(5, len(prompt_words)))
+
+
+def _requires_structured_answer(pending: dict[str, Any], exercise: dict[str, Any]) -> bool:
+    exercise_type = str(exercise.get("type") or pending.get("type") or "").casefold()
+    if exercise_type in {"batch", "calculation_batch", "vocabulary_batch", "vocab_batch"}:
+        return True
+    prompt = str(exercise.get("prompt") or pending.get("prompt") or "")
+    expected_count = _expected_item_count(exercise)
+    prompt_numbers = _prompt_numbered_item_count(prompt)
+    return expected_count > 1 and (prompt_numbers >= min(expected_count, 2) or "nummeriert" in prompt.casefold())
+
+
+def _structured_answer_acceptance(pending: dict[str, Any], exercise: dict[str, Any], text: str) -> dict[str, Any]:
+    expected_count = max(_expected_item_count(exercise), _prompt_numbered_item_count(str(exercise.get("prompt") or pending.get("prompt") or "")), 2)
+    explicit_pairs = _numbered_answer_pair_count(text)
+    if explicit_pairs:
+        return {"accept": True, "reason": "numbered_answer", "parts": explicit_pairs, "expected_parts": expected_count}
+
+    if _has_previous_correct_items(pending):
+        # After partial correction the child may send just the remaining answer.
+        # Accept short fragments, but still reject normal chat/questions.
+        if not _looks_like_non_answer_chat(text) and len(_words(text)) <= 10:
+            return {"accept": True, "reason": "short_partial_answer", "expected_parts": expected_count}
+
+    separated_parts = _separator_answer_part_count(text)
+    if separated_parts >= expected_count:
+        return {"accept": True, "reason": "separated_answer", "parts": separated_parts, "expected_parts": expected_count}
+
+    if str(exercise.get("type") or pending.get("type") or "").casefold() == "calculation_batch":
+        numeric_parts = len(re.findall(r"-?\d+(?:[,.]\d+)?", text))
+        if numeric_parts >= expected_count:
+            return {"accept": True, "reason": "numeric_batch_answer", "parts": numeric_parts, "expected_parts": expected_count}
+
+    return {
+        "accept": False,
+        "reason": "structured_answer_expected",
+        "parts": max(explicit_pairs, separated_parts),
+        "expected_parts": expected_count,
+    }
+
+
+def _expected_item_count(exercise: dict[str, Any]) -> int:
+    expected = exercise.get("expected_answers")
+    answer = exercise.get("answer")
+    if isinstance(expected, list):
+        return len([item for item in expected if str(item).strip()])
+    if isinstance(answer, list):
+        return len([item for item in answer if str(item).strip()])
+    if isinstance(answer, str):
+        parts = [part for part in re.split(r"[\n;|]+", answer) if part.strip()]
+        if len(parts) > 1:
+            return len(parts)
+    return 1
+
+
+def _prompt_numbered_item_count(prompt: str) -> int:
+    return len(re.findall(r"(?:^|\s)\d{1,2}\s*[\.)]\s+", str(prompt or "")))
+
+
+def _numbered_answer_pair_count(text: str) -> int:
+    return len(re.findall(r"(?:^|[\s\n])\d{1,2}\s*[\.):]\s*\S+", text))
+
+
+def _separator_answer_part_count(text: str) -> int:
+    return len([part for part in re.split(r"[\n;|]+", text) if part.strip()])
+
+
+def _has_previous_correct_items(pending: dict[str, Any]) -> bool:
+    for item in pending.get("item_results") or []:
+        if isinstance(item, dict) and item.get("correct") is True:
+            return True
+    return False
+
+
+def _looks_like_non_answer_chat(text: str) -> bool:
+    normalized = " ".join(str(text or "").casefold().split())
+    words = _words(normalized)
+    if "?" in normalized and len(words) > 4:
+        return True
+    if len(words) > 24:
+        return True
+    chat_starters = (
+        "ich möchte ",
+        "ich will ",
+        "kannst du ",
+        "kann ich ",
+        "wie viele ",
+        "warum ",
+        "wieso ",
+        "was ist ",
+        "weißt du ",
+        "weisst du ",
+        "erzähl ",
+        "erzaehl ",
+    )
+    return any(normalized.startswith(prefix) for prefix in chat_starters)
+
+
+def _off_topic_feedback(config: LearnBuddyConfig, pending: dict[str, Any], exercise: dict[str, Any], gate: dict[str, Any]) -> str:
+    if _requires_structured_answer(pending, exercise):
+        return (
+            "Das zähle ich nicht als Antwort auf die Aufgabe 😊 "
+            "Wenn du antworten möchtest, schreib bitte nummeriert, zum Beispiel: 1. ... 2. ..."
+        )
+    return (
+        "Das zähle ich nicht als Antwort auf die Aufgabe 😊 "
+        "Schreib einfach die Antwort, oder sag „Hilfe“/„Nochmal“, wenn du Unterstützung brauchst."
+    )
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[\wäöüÄÖÜß']+", text, flags=re.UNICODE)
+
+
+def _word_set(text: str) -> set[str]:
+    return {word.casefold() for word in _words(text) if len(word) > 2}
 
 
 def _with_metadata(delivery: dict[str, Any] | None, metadata: dict[str, Any], *, text: str | None = None) -> dict[str, Any] | None:
