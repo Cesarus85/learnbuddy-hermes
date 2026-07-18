@@ -15,6 +15,7 @@ import json
 import uuid
 
 from .evaluator import evaluate_answer
+from .parent_messages import format_parent_answer_notification, result_status_text
 
 
 @dataclass(frozen=True)
@@ -917,21 +918,21 @@ class LearnBuddyRuntime:
             session = sessions_by_exercise.get(exercise_id, {})
             prompt = _one_line(row.get("prompt") or exercise.get("prompt") or session.get("prompt") or "Aufgabe nicht mehr auffindbar")
             subject = _subject_label(row.get("subject") or exercise.get("subject"))
-            verdict = "richtig" if row.get("correct") else "noch nicht richtig"
             attempts = row.get("attempts")
             max_attempts = row.get("max_attempts") or self.max_attempts
             suffix = ""
             if attempts not in (None, ""):
                 if (not row.get("correct")) and row.get("exhausted"):
-                    suffix = f", Versuch {attempts}/{max_attempts} — alle Versuche aufgebraucht"
+                    suffix = f"{attempts}/{max_attempts} — alle Versuche aufgebraucht"
                 else:
-                    suffix = f", Versuch {attempts}"
+                    suffix = f"{attempts}/{max_attempts}"
             started_note = ""
             if session.get("timestamp") and not _same_local_date(session.get("timestamp"), _local_datetime(str(row.get("timestamp")), timezone_name), timezone_name):
                 short_date = _short_local_date(session.get("timestamp"), timezone_name)
                 if short_date:
                     started_note = f" — gestellt am {short_date}"
-            lines.append(f"{index}. {subject}{started_note}: {prompt}")
+            lines.append(f"{index}. {subject}{started_note}")
+            lines.append(f"   Aufgabe: {prompt}")
             lines.append(f"   {self.child_name}: {_one_line(row.get('answer'), max_len=260)}")
             history = histories.get(exercise_id, [])
             if len(history) > 1:
@@ -947,7 +948,9 @@ class LearnBuddyRuntime:
             wrong_items = [str(item.get("index")) for item in item_results if isinstance(item, dict) and not item.get("correct")]
             if wrong_items:
                 lines.append(f"   Nochmal anschauen: Nr. {', '.join(wrong_items[:6])}{' …' if len(wrong_items) > 6 else ''}")
-            lines.append(f"   Ergebnis: {verdict}{suffix}")
+            lines.append(f"   Status: {result_status_text(row)}")
+            if suffix:
+                lines.append(f"   Versuch: {suffix}")
         return lines
 
     def parent_automation_status(self, *, now: str | None = None, timezone_name: str = "Europe/Berlin") -> dict[str, Any]:
@@ -1057,17 +1060,17 @@ class LearnBuddyRuntime:
         if latest is None:
             text = f"{self.agent_name}: Noch keine Antwort von {self.child_name} gespeichert."
         else:
-            result_text = self._parent_result_text(latest)
             parent_candidate = latest.get("parent_delivery")
             parent_delivery = parent_candidate if isinstance(parent_candidate, dict) else {}
             delivery_status = str(parent_delivery.get("status") or "nicht protokolliert")
-            text = (
-                f"{self.agent_name}: {self.child_name} hat geantwortet.\n"
-                f"Aufgabe: {latest.get('prompt') or 'unbekannt'}\n"
-                f"Antwort: {latest.get('answer') or ''}\n"
-                f"Ergebnis: {result_text}.\n"
-                f"Eltern-Benachrichtigung: {delivery_status}."
-            )
+            text = format_parent_answer_notification(
+                agent_name=self.agent_name,
+                child_name=self.child_name,
+                subject=latest.get("subject"),
+                prompt=latest.get("prompt") or "unbekannt",
+                answer=latest.get("answer") or "",
+                result=latest,
+            ) + f"\n\nEltern-Benachrichtigung: {delivery_status}."
         return {
             "status": "ok",
             "child_id": self.child_id,

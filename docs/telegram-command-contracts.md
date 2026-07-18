@@ -19,6 +19,7 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 - Tool: `learnbuddy_parent_answer_status`
 - Side effect: none
 - Rule: read-only; joins answer history with the original prompt and persisted parent-notification delivery metadata.
+- Rendering rule: parent-facing answer notifications and status output use separate `Aufgabe`, `Antwort von <Learner>`, and `Auswertung` sections. Partial multi-part results include attempt count, score, and the item numbers that still need work instead of collapsing everything into one paragraph.
 
 ### Report
 
@@ -107,6 +108,12 @@ The parent-facing Hermes profile uses the `learnbuddy_learning` toolset. It may 
 ## Child boundary
 
 Parent command contracts are never exposed through the `learnbuddy_child` toolset. Child Telegram handling remains narrow: answers, `Nochmal`, `Hilfe`, `Ich weiß nicht`, `Noch eine`, and `Noch eine Aufgabe` are processed by the Kids-Bot watcher without admin capability.
+
+### Answer classification and evaluation
+
+- Ordinary child chat such as greetings, thanks, or a new question must not be submitted as an answer merely because an exercise is pending. A structured/numbered task requires answer-shaped input or an explicit reply to the delivered task.
+- Ordered multi-part exercises preserve per-item progress and may define multiple acceptable aliases for each item.
+- Prompts that explicitly ask the learner to name/list **all** expected items are evaluated as a complete order-independent set. Correct items remain credited across retries; duplicates or a partial list do not complete the task.
 
 ### Child-intent classification
 

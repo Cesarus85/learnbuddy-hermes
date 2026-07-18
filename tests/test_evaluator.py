@@ -55,3 +55,45 @@ def test_multi_part_math_answer_reports_partial_progress():
     assert result.metadata["total"] == 3
     assert "2/3" in result.feedback
     assert "Nr. 2" in result.feedback
+
+def test_multi_question_vocab_requires_all_items_and_accepts_alias_groups():
+    prompt = 'Was heißt "springen" auf Englisch? Was heißt "tanzen" auf Englisch?'
+    single = evaluate_answer(
+        "to jump",
+        expected_answers=["jump", "to jump", "dance", "to dance"],
+        prompt=prompt,
+        subject="english",
+    )
+    assert single.correct is False
+    assert single.metadata["score"] == 1
+    assert single.metadata["total"] == 2
+
+    both = evaluate_answer(
+        "1. to jump 2. to dance",
+        expected_answers=["jump", "to jump", "dance", "to dance"],
+        prompt=prompt,
+        subject="english",
+    )
+    assert both.correct is True
+    assert both.metadata["score"] == 2
+    assert both.metadata["total"] == 2
+
+
+def test_name_all_answers_requires_complete_unordered_set():
+    expected = ["Dänemark", "Polen", "Tschechien", "Österreich", "Schweiz", "Frankreich", "Luxemburg", "Belgien", "Niederlande"]
+    prompt = "Welche Länder grenzen an Deutschland? Nenne alle Nachbarländer!"
+
+    partial = evaluate_answer("Dänemark", expected_answers=expected, prompt=prompt, subject="german")
+    assert partial.correct is False
+    assert partial.metadata["score"] == 1
+    assert partial.metadata["total"] == 9
+
+    complete = evaluate_answer(
+        "Polen, Dänemark, Belgien, Luxemburg, Frankreich, Schweiz, Österreich, Tschechien, Niederlande",
+        expected_answers=expected,
+        prompt=prompt,
+        subject="german",
+    )
+    assert complete.correct is True
+    assert complete.metadata["score"] == 9
+    assert complete.metadata["total"] == 9

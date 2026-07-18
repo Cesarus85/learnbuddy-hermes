@@ -127,6 +127,8 @@ Phase 3 doctor/CLI slice adds:
 - curriculum/content parity seed: `learnbuddy seed --pack de/bavaria-realschule-grade-5` imports 80 public-safe synthetic Bavaria/Realschule grade-5 exercises across Mathe, Deutsch, and Englisch, without copying private production data
 - scheduled plan dispatcher parity: `dispatch-plan` respects `daily_auto_limit`, `allowed_hours`, and existing pending work before opening/delivering one automatic exercise
 - delivery-state parity: pending sessions record child delivery status/message metadata; the watcher and `deliver-pending` repair undelivered pending prompts before expecting child answers
+- answer-routing parity: ordinary child chat is gated away from pending-answer evaluation; ordered multi-part tasks support per-item aliases/progress, while explicit "name all" prompts require the complete order-independent answer set
+- parent-message parity: answer notifications and answer-status views render task, child answer, result, attempt count, partial score, and remaining item numbers as readable sections
 - Hermes plugin role split: broad parent/admin `learnbuddy_learning` toolset plus narrow child-facing `learnbuddy_child` aliases
 - public-safe `learnbuddy setup` that creates a starter config and local storage without secrets
 - zip-based `learnbuddy backup` and `learnbuddy restore` for runtime data files only

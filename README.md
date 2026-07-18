@@ -10,10 +10,10 @@ LearnBuddy is a bounded learning companion that can:
 
 - queue short exercises for a child
 - open one pending exercise at a time
-- evaluate answers kindly
+- evaluate answers kindly, including ordered multi-part tasks and order-independent "name all" lists
 - limit attempts and give a final explanation when attempts are used up
 - track progress in local JSON/JSONL runtime files
-- render parent-facing summaries
+- render readable parent-facing summaries with separate task, child-answer, and evaluation sections
 - record bounded parent-help requests and notify parents only when explicitly requested
 - import parent-supplied worksheet text/files/photos into a review queue before any child-visible exercise exists
 - run network-free in `dry_run` mode or via Telegram adapters

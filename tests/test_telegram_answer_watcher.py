@@ -3,7 +3,7 @@ import json
 
 from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.runtime import LearnBuddyRuntime
-from learnbuddy_core.telegram_answer_watcher import process_child_telegram_answers
+from learnbuddy_core.telegram_answer_watcher import _answer_acceptance_for_message, process_child_telegram_answers
 
 
 def test_telegram_answer_watcher_processes_child_answer_and_notifies(tmp_path, monkeypatch):
@@ -52,6 +52,15 @@ def test_telegram_answer_watcher_processes_child_answer_and_notifies(tmp_path, m
     assert result["parent_delivery"]["status"] == "dry_run"
     assert runtime.status()["pending"] is None
     assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 12
+
+
+def test_greeting_is_not_an_answer_to_short_or_geography_task():
+    pending = {"type": "geography", "prompt": "Welche Länder grenzen an Deutschland?", "attempts": 0}
+    exercise = {"type": "geography", "prompt": pending["prompt"], "expected_answers": ["Dänemark", "Polen"]}
+
+    gate = _answer_acceptance_for_message(pending, exercise, {"text": "Hallo Vision"}, "Hallo Vision")
+
+    assert gate == {"accept": False, "reason": "looks_like_chat"}
 
 
 def test_telegram_answer_watcher_does_not_count_off_topic_chat_as_batch_answer(tmp_path, monkeypatch):
@@ -103,6 +112,54 @@ def test_telegram_answer_watcher_does_not_count_off_topic_chat_as_batch_answer(t
     assert runtime.status()["pending"].get("item_results") is None
     assert runtime.parent_report()["answers"] == 0
     assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 13
+
+
+def test_telegram_answer_watcher_does_not_count_off_topic_chat_as_fill_in_blank_text_answer(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    config = LearnBuddyConfig(
+        child_id="learner-1",
+        child_name="Learner",
+        agent_name="LearnBuddy",
+        storage_dir=str(data_dir),
+        delivery_mode="dry_run",
+        child_telegram_bot_token_env="CHILD_BOT",
+        child_telegram_chat_id_env="CHILD_CHAT",
+        parent_telegram_bot_token_env="PARENT_BOT",
+        parent_telegram_chat_id_env="PARENT_CHAT",
+    )
+    monkeypatch.setenv("CHILD_BOT", "child-secret-token")
+    monkeypatch.setenv("CHILD_CHAT", "123")
+    monkeypatch.setenv("PARENT_BOT", "parent-secret-token")
+    monkeypatch.setenv("PARENT_CHAT", "456")
+    runtime = LearnBuddyRuntime(data_dir, child_id="learner-1", child_name="Learner", agent_name="LearnBuddy")
+    exercise = runtime.add_exercise({
+        "subject": "english",
+        "type": "text",
+        "prompt": "Fill in the correct form of the verbs in simple present! Hi! I ___ (be) Mia. I ___ (get up) at 7 o'clock every day. I ___ (have) breakfast.",
+        "expected_answers": ["am", "get up", "have"],
+    })
+    opened = runtime.open_exercise(exercise["id"])
+    pending_ts = int(datetime.fromisoformat(opened["session"]["timestamp"]).timestamp())
+
+    def fake_transport(url, payload):
+        if url.endswith("/getUpdates"):
+            return {
+                "ok": True,
+                "result": [
+                    {"update_id": 14, "message": {"message_id": 4, "date": pending_ts + 1, "chat": {"id": 123}, "from": {"is_bot": False}, "text": "Erkläre genauer wie ich auf 5000€ : 250€ komme"}},
+                ],
+            }
+        raise AssertionError(url)
+
+    result = process_child_telegram_answers(config, state_file=tmp_path / "watch.json", transport=fake_transport)
+
+    assert result["status"] == "off_topic"
+    assert result["reason"] == "structured_answer_expected"
+    assert result["parent_delivery"] is None
+    assert runtime.status()["pending"]["exercise_id"] == exercise["id"]
+    assert runtime.status()["pending"]["attempts"] == 0
+    assert runtime.parent_report()["answers"] == 0
+    assert json.loads((tmp_path / "watch.json").read_text())["offset"] == 15
 
 
 def test_telegram_answer_watcher_accepts_unreplied_batch_answer_when_format_matches(tmp_path, monkeypatch):

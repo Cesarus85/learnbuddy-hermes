@@ -16,6 +16,7 @@ from learnbuddy_core.config import LearnBuddyConfig
 from learnbuddy_core.delivery import DeliveryMessage, delivery_adapter_from_config
 from learnbuddy_core.material_import import build_material_from_file
 from learnbuddy_core.notifier import ParentNotifier
+from learnbuddy_core.parent_messages import format_parent_answer_notification
 from learnbuddy_core.pending_reminders import run_pending_reminder
 from learnbuddy_core.runtime import LearnBuddyRuntime
 from learnbuddy_core.telegram_answer_watcher import _dispatch_child_requested_next_exercise, _with_metadata
@@ -872,16 +873,13 @@ def learnbuddy_child_submit_answer(args: dict[str, Any] | None = None) -> str:
     if child_args.get("notify_parent", True) and isinstance(pending, dict) and result.get("result") != "no_pending":
         prompt = str(pending.get("prompt") or "die offene Aufgabe")
         answer_text = str(child_args.get("answer", ""))
-        status = "richtig" if result.get("correct") else "noch nicht richtig"
-        if result.get("result") == "exhausted":
-            status = "alle Versuche aufgebraucht"
-        attempts = result.get("attempts")
-        max_attempts = result.get("max_attempts")
-        parent_text = (
-            f"📚 {config.agent_name}: {config.child_name} hat geantwortet in {pending.get('subject', 'general')}\n"
-            f"Aufgabe: {prompt}\n"
-            f"Antwort: {answer_text}\n"
-            f"Ergebnis: {status}, Versuch {attempts}/{max_attempts}."
+        parent_text = format_parent_answer_notification(
+            agent_name=config.agent_name,
+            child_name=config.child_name,
+            subject=pending.get("subject", "general"),
+            prompt=prompt,
+            answer=answer_text,
+            result=result,
         )
         parent_delivery = _delivery_adapter(config, recipient="parent").deliver_parent(
             DeliveryMessage(text=parent_text, metadata={"kind": "child_answer_result", "session_id": pending.get("id")})

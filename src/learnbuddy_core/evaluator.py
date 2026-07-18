@@ -173,6 +173,29 @@ def _ordered_text_answer_pairs(text: Any) -> list[tuple[int, str]]:
     return out
 
 
+def _looks_like_unordered_all_prompt(prompt: str | None) -> bool:
+    normalized = normalize_answer(prompt)
+    return any(phrase in normalized for phrase in (
+        "nenne alle",
+        "alle nachbarländer",
+        "alle nachbarlaender",
+        "name all",
+        "list all",
+    ))
+
+
+def _unordered_text_answers(text: Any) -> list[str]:
+    raw = "" if text is None else str(text)
+    numbered = _ordered_text_answers(raw)
+    if len(numbered) > 1:
+        return numbered
+    parts = [
+        normalize_answer(re.sub(r"^\s*\d{1,2}\s*[\.):]\s*", "", part))
+        for part in re.split(r"[,;|\n]+", raw)
+    ]
+    return [part for part in parts if part]
+
+
 def _ordered_expected(answer: Any = None, expected_answers: Iterable[Any] | None = None, *, prompt: str | None = None, exercise_type: str | None = None) -> list[Any]:
     if isinstance(answer, (list, tuple)) and len(answer) > 1:
         return list(answer)
@@ -192,7 +215,26 @@ def _ordered_expected(answer: Any = None, expected_answers: Iterable[Any] | None
         prompt_parts = max(str(prompt).count("?"), 0)
         if prompt_parts > 1 and len(vals) == prompt_parts:
             return vals
+        if prompt_parts > 1 and len(vals) > prompt_parts and len(vals) % prompt_parts == 0:
+            chunk = len(vals) // prompt_parts
+            return [vals[i * chunk:(i + 1) * chunk] for i in range(prompt_parts)]
     return []
+
+
+def _normalize_ordered_expected_item(value: Any, *, numeric: bool) -> list[str]:
+    raw_values = value if isinstance(value, (list, tuple, set)) else [value]
+    out: list[str] = []
+    for raw in raw_values:
+        normalized = _norm_number(raw) if numeric else normalize_answer(raw)
+        if normalized and normalized not in out:
+            out.append(normalized)
+    return out
+
+
+def _ordered_expected_label(value: Any) -> str:
+    if isinstance(value, (list, tuple, set)):
+        return " / ".join(str(item) for item in value if str(item).strip())
+    return str(value)
 
 
 def _looks_like_multi_part_prompt(prompt: str | None) -> bool:
@@ -200,6 +242,63 @@ def _looks_like_multi_part_prompt(prompt: str | None) -> bool:
         return False
     text = str(prompt)
     return text.count("?") > 1 or len([line for line in text.splitlines() if line.strip()]) > 2
+
+
+def _evaluate_unordered_answer(
+    user_answer: Any,
+    expected: list[Any],
+    *,
+    previous_attempts: int,
+    max_attempts: int,
+    previous_item_results: Iterable[dict[str, Any]] | None = None,
+) -> Evaluation:
+    attempts = previous_attempts + 1
+    expected_norm = [_normalize_ordered_expected_item(value, numeric=False) for value in expected]
+    matched: dict[int, str] = {}
+    for row in previous_item_results or []:
+        if not isinstance(row, dict) or row.get("correct") is not True:
+            continue
+        try:
+            index = int(row.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= index <= len(expected_norm):
+            matched[index] = str(row.get("given") or "")
+    for value in _unordered_text_answers(user_answer):
+        for index, aliases in enumerate(expected_norm, 1):
+            if index not in matched and value in aliases:
+                matched[index] = value
+                break
+    item_results = [
+        {
+            "index": index,
+            "given": matched.get(index, ""),
+            "expected": _ordered_expected_label(expected[index - 1]),
+            "correct": index in matched,
+        }
+        for index in range(1, len(expected_norm) + 1)
+    ]
+    correct_count = len(matched)
+    total = len(expected_norm)
+    correct = bool(total and correct_count == total)
+    exhausted = bool((not correct) and attempts >= max_attempts)
+    canon = ", ".join(_ordered_expected_label(value) for value in expected)
+    metadata = {"score": correct_count, "total": total, "item_results": item_results}
+    if correct:
+        feedback = "Richtig! Du hast alle genannt 🎉"
+    elif exhausted:
+        feedback = f"Guter Versuch. Die vollständige Lösung ist: {canon}."
+    else:
+        feedback = f"Fast! {correct_count}/{total} stimmen. Es fehlen noch {total - correct_count}. Versuch es nochmal."
+    return Evaluation(
+        correct=correct,
+        attempts=attempts,
+        max_attempts=max_attempts,
+        exhausted=exhausted,
+        canonical_answer=canon,
+        feedback=feedback,
+        metadata=metadata,
+    )
 
 
 def _evaluate_ordered_answer(
@@ -216,11 +315,11 @@ def _evaluate_ordered_answer(
     if numeric:
         explicit_pairs = _ordered_number_answer_pairs(user_answer)
         given = _ordered_number_answers(user_answer)
-        expected_norm = expected_numbers
+        expected_norm = [_normalize_ordered_expected_item(value, numeric=True) for value in expected]
     else:
         explicit_pairs = _ordered_text_answer_pairs(user_answer)
         given = _ordered_text_answers(user_answer)
-        expected_norm = [normalize_answer(value) for value in expected]
+        expected_norm = [_normalize_ordered_expected_item(value, numeric=False) for value in expected]
 
     previous_correct: dict[int, dict[str, Any]] = {}
     for row in previous_item_results or []:
@@ -238,13 +337,13 @@ def _evaluate_ordered_answer(
         previous_correct[index] = {
             "index": index,
             "given": str(row.get("given") or ""),
-            "expected": expected_norm[index - 1],
+            "expected": _ordered_expected_label(expected[index - 1]),
             "correct": True,
         }
 
     item_results: list[dict[str, Any]] = [
-        previous_correct.get(index, {"index": index, "given": "", "expected": exp, "correct": False})
-        for index, exp in enumerate(expected_norm, 1)
+        previous_correct.get(index, {"index": index, "given": "", "expected": _ordered_expected_label(expected[index - 1]), "correct": False})
+        for index in range(1, len(expected_norm) + 1)
     ]
     explicit = {index: value for index, value in explicit_pairs if 1 <= index <= len(expected_norm)}
     open_indices = [index for index in range(1, len(expected_norm) + 1) if index not in previous_correct]
@@ -258,16 +357,21 @@ def _evaluate_ordered_answer(
             targets = list(range(1, len(expected_norm) + 1))
         assignments = {index: got for index, got in zip(targets, given)}
 
-    for index, exp in enumerate(expected_norm, 1):
+    for index, aliases in enumerate(expected_norm, 1):
         if index not in assignments:
             continue
         got = assignments[index]
-        item_results[index - 1] = {"index": index, "given": got, "expected": exp, "correct": bool(got and got == exp)}
+        item_results[index - 1] = {
+            "index": index,
+            "given": got,
+            "expected": _ordered_expected_label(expected[index - 1]),
+            "correct": bool(got and got in aliases),
+        }
     correct_count = sum(1 for row in item_results if row["correct"])
     total = len(expected_norm)
     correct = bool(total and correct_count == total)
     exhausted = bool((not correct) and attempts >= max_attempts)
-    canon = ", ".join(str(value) for value in expected)
+    canon = ", ".join(_ordered_expected_label(value) for value in expected)
     metadata = {"score": correct_count, "total": total, "item_results": item_results}
     if correct:
         feedback = "Richtig! Alle Teilaufgaben stimmen 🎉"
@@ -299,6 +403,16 @@ def evaluate_answer(
     if max_attempts < 1:
         raise ValueError("max_attempts must be >= 1")
     attempts = previous_attempts + 1
+    if expected_answers is not None and _looks_like_unordered_all_prompt(prompt):
+        unordered_expected = list(expected_answers)
+        if len(unordered_expected) > 1:
+            return _evaluate_unordered_answer(
+                user_answer,
+                unordered_expected,
+                previous_attempts=previous_attempts,
+                max_attempts=max_attempts,
+                previous_item_results=previous_item_results,
+            )
     ordered_expected = _ordered_expected(answer, expected_answers, prompt=prompt, exercise_type=exercise_type)
     if ordered_expected and (
         previous_item_results

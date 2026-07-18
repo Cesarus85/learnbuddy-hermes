@@ -21,6 +21,7 @@ from .child_intent import IntentClassifierConfig, classify_child_intent
 from .config import LearnBuddyConfig
 from .delivery import DeliveryMessage, delivery_adapter_from_config
 from .notifier import ParentNotifier
+from .parent_messages import format_parent_answer_notification
 from .runtime import LearnBuddyRuntime
 
 Transport = Callable[[str, dict[str, Any]], dict[str, Any]]
@@ -305,7 +306,14 @@ def _requires_structured_answer(pending: dict[str, Any], exercise: dict[str, Any
     prompt = str(exercise.get("prompt") or pending.get("prompt") or "")
     expected_count = _expected_item_count(exercise)
     prompt_numbers = _prompt_numbered_item_count(prompt)
-    return expected_count > 1 and (prompt_numbers >= min(expected_count, 2) or "nummeriert" in prompt.casefold())
+    prompt_lower = prompt.casefold()
+    blank_count = prompt.count("___")
+    return expected_count > 1 and (
+        prompt_numbers >= min(expected_count, 2)
+        or "nummeriert" in prompt_lower
+        or blank_count >= min(expected_count, 2)
+        or "fill in" in prompt_lower
+    )
 
 
 def _structured_answer_acceptance(pending: dict[str, Any], exercise: dict[str, Any], text: str) -> dict[str, Any]:
@@ -378,6 +386,15 @@ def _looks_like_non_answer_chat(text: str) -> bool:
     if len(words) > 24:
         return True
     chat_starters = (
+        "hallo",
+        "hi ",
+        "hey",
+        "guten morgen",
+        "guten tag",
+        "guten abend",
+        "danke",
+        "ok ",
+        "okay ",
         "ich möchte ",
         "ich will ",
         "kannst du ",
@@ -390,6 +407,12 @@ def _looks_like_non_answer_chat(text: str) -> bool:
         "weisst du ",
         "erzähl ",
         "erzaehl ",
+        "erkläre ",
+        "erklaere ",
+        "erklär ",
+        "erklaer ",
+        "wie komme ",
+        "wie komm ",
     )
     return any(normalized.startswith(prefix) for prefix in chat_starters)
 
@@ -708,16 +731,13 @@ def _find_answer_update(updates: list[Any], *, allowed_chat_id: str, pending_sin
 
 
 def _render_parent_answer_notification(config: LearnBuddyConfig, pending: dict[str, Any], answer_text: str, result: dict[str, Any]) -> str:
-    verdict = "richtig" if result.get("correct") is True else "noch nicht richtig"
-    if result.get("result") == "exhausted":
-        verdict = "nicht richtig — alle Versuche aufgebraucht"
-    attempts = result.get("attempts")
-    max_attempts = result.get("max_attempts")
-    return (
-        f"📚 {config.agent_name}: {config.child_name} hat geantwortet\n"
-        f"Aufgabe: {pending.get('prompt')}\n"
-        f"Antwort: {answer_text}\n"
-        f"Ergebnis: {verdict}, Versuch {attempts}/{max_attempts}."
+    return format_parent_answer_notification(
+        agent_name=config.agent_name,
+        child_name=config.child_name,
+        subject=pending.get("subject", "general"),
+        prompt=pending.get("prompt"),
+        answer=answer_text,
+        result=result,
     )
 
 
